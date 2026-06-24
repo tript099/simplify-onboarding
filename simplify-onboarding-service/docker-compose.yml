@@ -1,0 +1,44 @@
+# Backend container stack: Redis + simplify-onboarding-service.
+# Production identity = Zitadel (it stores passwords and SENDS the verification
+# email). Zitadel config is read from the repo-root .env (../../.env).
+#
+#   docker compose --env-file ../../.env up -d --build
+#   docker compose logs -f onboarding
+#   docker compose down
+#
+# Run the frontend yourself (npm run dev on :3100); its Vite proxy reaches this
+# service at localhost:8090.
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  onboarding:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      APP_ENV: development
+      PORT: "8090"
+      REDIS_URL: redis://redis:6379
+      REDIS_DB: "1"
+
+      # Identity → Zitadel (the same instance docflow uses).
+      IDENTITY_PROVIDER: zitadel
+      ZITADEL_ISSUER: ${ZITADEL_ISSUER}
+      ZITADEL_INTERNAL_URL: ${ZITADEL_INTERNAL_URL:-${ZITADEL_ISSUER}}
+      ZITADEL_CLIENT_ID: ${ZITADEL_CLIENT_ID}
+      ZITADEL_SERVICE_PAT: ${ZITADEL_SERVICE_PAT}
+      ZITADEL_ORG_ID: ${ZITADEL_ORG_ID}
+
+      # Local testing only: have Zitadel RETURN the code (instead of emailing it)
+      # and surface it in the API response. MUST be false/unset in production.
+      DEBUG_RETURN_CODE: ${DEBUG_RETURN_CODE:-false}
+
+      COOKIE_SECURE: "false"
+      FRONTEND_URL: http://localhost:3100
+      CORS_ALLOWED_ORIGINS: http://localhost:3100
+      SIMPLIFYCORE_STUB: "true"
+    depends_on:
+      - redis
