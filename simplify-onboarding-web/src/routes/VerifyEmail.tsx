@@ -14,6 +14,7 @@ interface VerifyState {
   email?: string;
   debugCode?: string;
   productKey?: string;
+  redirectTo?: string | null; // product to land on after verifying (if signed up from one)
 }
 
 export default function VerifyEmailPage() {
@@ -48,7 +49,12 @@ export default function VerifyEmailPage() {
       const res = await verifyEmailOtp(state.verificationId, toCheck);
       if (res.verified) {
         await refreshAuth();
-        navigate(res.next, { replace: true });
+        // If they came from a product, land back there; else the portal home.
+        if (state.redirectTo) {
+          window.location.assign(state.redirectTo);
+        } else {
+          navigate(res.next, { replace: true });
+        }
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Verification failed. Please try again.");

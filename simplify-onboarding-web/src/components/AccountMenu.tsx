@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, LogOut, ShieldCheck, ShieldAlert } from "lucide-react";
 
@@ -22,6 +23,7 @@ function displayName(u: SessionUser): string {
 
 export function AccountMenu({ user }: { user: SessionUser }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -34,6 +36,7 @@ export function AccountMenu({ user }: { user: SessionUser }) {
       qc.invalidateQueries({ queryKey: AUTH_QUERY_KEY });
       setOpen(false);
       setSigningOut(false);
+      navigate("/auth?mode=signin"); // land on the sign-in page after logout
     }
   };
 

@@ -20,7 +20,10 @@ import (
 	"github.com/simplify/onboarding/internal/handler"
 	"github.com/simplify/onboarding/internal/identity"
 	"github.com/simplify/onboarding/internal/session"
-	"github.com/simplify/onboarding/internal/userstore"
+	"github.com/simplify/onboarding/internal/mailforge"
+	"github.com/simplify/onboarding/internal/notify"
+	"github.com/simplify/onboarding/internal/scheduler"
+	"github.com/simplify/onboarding/internal/store"
 	"github.com/simplify/onboarding/internal/visitor"
 )
 
@@ -64,17 +67,18 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 		log.Info("session mode: persist-until-logout (central SSO session)")
 	}
 
-	// Shared platform directory — when wired, sessions become DocFlow-compatible
-	// (internal user id + tenant + role) so products pick them up with no rewrite.
-	var dir *userstore.Store
-	if cfg.DatabaseURL != "" {
-		d, derr := userstore.New(context.Background(), cfg.DatabaseURL, log)
+	// Onboarding's OWN database (users, demo requests, events, audit). Migrations run
+	// at startup. Separate from the shared platform DB above.
+	var db *store.Store
+	if cfg.OnboardingDatabaseURL != "" {
+		s, derr := store.New(context.Background(), cfg.OnboardingDatabaseURL, log)
 		if derr != nil {
-			log.Warn("shared directory unavailable — sessions won't carry DocFlow tenant/role", zap.Error(derr))
+			log.Error("onboarding database unavailable — persistence disabled", zap.Error(derr))
 		} else {
-			dir = d
-			log.Info("shared platform directory connected — DocFlow-compatible sessions enabled")
+			db = s
 		}
+	} else {
+		log.Warn("ONBOARDING_DATABASE_URL not set — user/demo/event persistence disabled")
 	}
 
 	cat := catalog.New(cfg.ProductRegistryFile, log)
@@ -85,22 +89,54 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 	visitors := visitor.New(rdb, 30*24*time.Hour, cfg.CookieSecure, log)
 	ent := entitlements.New(cfg.SimplifyCoreURL, cfg.SimplifyCoreToken, cfg.SimplifyCoreStub, keys, log)
 
+	// Email (MailForge) — demo/POC confirmation + team notification. Email HTML lives
+	// in MailForge as published templates; we send by template_id + variables.
+	mf := mailforge.New(cfg.MailforgeURL, cfg.MailforgeAPIKey)
+	notifier := notify.New(mf, cfg.DemoRecipientsFile, notify.Config{
+		FromName:               cfg.MailforgeFromName,
+		FromEmail:              cfg.MailforgeFromEmail,
+		ReplyTo:                cfg.MailforgeReplyTo,
+		PortalURL:              cfg.FrontendURL,
+		ConfirmationTemplateID: cfg.MailforgeTplConfirmation,
+		TeamNotifyTemplateID:   cfg.MailforgeTplTeamNotify,
+		InviteTemplateID:       cfg.MailforgeTplInvite,
+	}, log)
+	if mf.Enabled() {
+		log.Info("notify: MailForge email enabled", zap.String("from", cfg.MailforgeFromEmail))
+	} else {
+		log.Warn("notify: MAILFORGE_API_KEY not set — demo/POC emails will be skipped")
+	}
+
+	// External meeting scheduler (Google Meet / Teams).
+	sched := scheduler.New(cfg.SchedulerURL, cfg.SchedulerPath, cfg.SchedulerPasscode, cfg.SchedulerDuration)
+	if sched.Enabled() {
+		log.Info("scheduler: meeting scheduling enabled", zap.String("path", cfg.SchedulerPath))
+	} else {
+		log.Warn("scheduler: SCHEDULER_URL/PASSCODE not set — meeting scheduling disabled")
+	}
+
 	h := handler.New(handler.Deps{
 		Cfg:          cfg,
 		Log:          log,
+		RDB:          rdb,
 		Users:        users,
-		Dir:          dir,
+		DB:           db,
 		Sessions:     sessions,
 		Catalog:      cat,
 		Visitors:     visitors,
 		Entitlements: ent,
+		Notify:       notifier,
+		Scheduler:    sched,
 	})
 
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Timeout(20 * time.Second))
+	// Request budget for the whole flow (kept below the server WriteTimeout so the
+	// app returns a clean 504 rather than the connection being hard-closed). Sign-in
+	// fans out to Zitadel + the shared DB, which is slow over the VPN.
+	r.Use(chimw.Timeout(45 * time.Second))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
@@ -118,15 +154,20 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", h.Register)
 		r.Post("/login", h.SignIn)
+		r.Post("/demo", h.DemoLogin) // "Try it now" — shared demo account, no signup
 		r.Get("/me", h.Me)
 		r.Get("/logout", h.Logout)
 		r.Get("/validate", h.Validate)
 		r.Get("/clients", h.Clients)
 		r.Get("/sso/{provider}", h.SSOStart)
+		r.Get("/sso/callback/{provider}", h.SSOCallback) // Zitadel IDP-intent return
 		r.Post("/otp/email/start", h.ResendEmailCode) // resend the email code
 		r.Post("/otp/email/verify", h.VerifyEmailCode)
 		r.Post("/otp/mobile/start", h.StartMobileCode)
 		r.Post("/otp/mobile/verify", h.VerifyMobileCode)
+		// Passwordless sign-in (code to email/mobile).
+		r.Post("/login/otp/start", h.StartLoginOTP)
+		r.Post("/login/otp/verify", h.VerifyLoginOTP)
 	})
 
 	r.Route("/onb", func(r chi.Router) {
@@ -135,6 +176,8 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 		r.Get("/state", h.OnbState)
 		r.Get("/products/{key}/motion", h.ProductMotion)
 		r.Get("/entitlements", h.Entitlements)
+		r.Post("/demo", h.SubmitDemo)
+		r.Post("/demo/{id}/schedule", h.ScheduleDemo) // internal: book a meeting for a request
 	})
 
 	return &Server{router: r}, nil

@@ -40,7 +40,7 @@ docker compose up -d                       # in the repo root
 
 # 2) Onboarding ON DocFlow's network, sharing its Redis + DB
 cd simplify-onboarding/simplify-onboarding-service
-docker compose -f docker-compose.sso.yml --env-file ../../.env up -d --build
+docker compose --env-file ../../.env up -d --build
 #   (if the network name differs: DOCFLOW_NETWORK=<name> docker compose -f … up -d)
 #   find it with:  docker network ls | grep internal
 

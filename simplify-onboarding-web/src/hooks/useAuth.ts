@@ -10,6 +10,11 @@ export function useAuth() {
     queryFn: me,
     staleTime: 30_000,
     retry: false,
+    // Re-fetch periodically so the central (persist) session is healed back to
+    // no-expiry — a product on the shared Redis (DocFlow) re-arms a sliding TTL on
+    // it, and each /me strips that TTL. 5 min is well under DocFlow's 30-min window.
+    refetchInterval: 5 * 60_000,
+    refetchOnWindowFocus: true,
   });
   return {
     user: (query.data ?? null) as SessionUser | null,

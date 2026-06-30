@@ -16,6 +16,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed the tz database so LoadLocation works in a minimal image
 
 	"github.com/simplify/onboarding/internal/config"
 	"github.com/simplify/onboarding/internal/server"
@@ -44,11 +45,15 @@ func main() {
 	}
 
 	httpSrv := &http.Server{
-		Addr:              ":" + cfg.Port,
-		Handler:           srv.Router(),
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		Addr:    ":" + cfg.Port,
+		Handler: srv.Router(),
+		ReadTimeout: 10 * time.Second,
+		// Auth flows fan out to a remote IdP (Zitadel) + DB; over a slow link a single
+		// sign-in can take tens of seconds. Keep WriteTimeout above the request-level
+		// timeout (chi) so the app returns a clean response instead of the server
+		// hard-closing the connection mid-flight.
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -64,6 +64,32 @@ type Provider interface {
 
 	Authenticate(ctx context.Context, email, password string) (User, error)
 	Get(ctx context.Context, userID string) (User, error)
+
+	// LookupByLogin finds a user by email or phone.
+	LookupByLogin(ctx context.Context, identifier string) (User, error)
+
+	// StartLoginOTP begins passwordless sign-in: it resolves the identifier and
+	// triggers a one-time code (Zitadel sends it; dev logs it). The opaque handle
+	// is persisted by the caller and returned to VerifyLoginOTP. debugCode is set
+	// only in code-return mode (testing) — handlers must gate its exposure.
+	StartLoginOTP(ctx context.Context, identifier string) (handle LoginOTPHandle, debugCode string, err error)
+
+	// VerifyLoginOTP checks the code against the handle and returns the user.
+	VerifyLoginOTP(ctx context.Context, handle LoginOTPHandle, code string) (User, error)
+
+	// EnsureUser idempotently provisions a user with a pre-verified email (for
+	// system/demo accounts). Returns the existing user if it already exists.
+	EnsureUser(ctx context.Context, in RegisterInput) (User, error)
+}
+
+// LoginOTPHandle is opaque provider state for an in-flight passwordless login.
+// It is JSON-persisted between StartLoginOTP and VerifyLoginOTP.
+type LoginOTPHandle struct {
+	UserID       string `json:"userId"`
+	Channel      string `json:"channel"` // "email" | "mobile"
+	SessionID    string `json:"sessionId,omitempty"`    // Zitadel session
+	SessionToken string `json:"sessionToken,omitempty"` // Zitadel session token
+	CodeHash     string `json:"codeHash,omitempty"`     // dev provider only
 }
 
 // NormalizeEmail lower-cases and trims an email for consistent indexing.

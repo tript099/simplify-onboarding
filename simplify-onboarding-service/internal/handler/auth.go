@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/simplify/onboarding/internal/httpx"
 	"github.com/simplify/onboarding/internal/identity"
 	"github.com/simplify/onboarding/internal/session"
-	"github.com/simplify/onboarding/internal/userstore"
+	"github.com/simplify/onboarding/internal/store"
 	"go.uber.org/zap"
 )
 
@@ -81,7 +84,14 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.establishSession(w, r, user); err != nil {
+	// Carry the registration profile (Zitadel doesn't return company/title) so the
+	// onboarding DB captures the full sign-up, not just the identity.
+	user.Company = req.Company
+	user.JobTitle = req.JobTitle
+	if user.Phone == "" {
+		user.Phone = req.Phone
+	}
+	if err := h.establishSession(w, r, user, false, "password"); err != nil {
 		h.log.Error("register: create session", zap.Error(err))
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "could not start your session")
 		return
@@ -124,7 +134,7 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "could not sign you in")
 		return
 	}
-	if err := h.establishSession(w, r, user); err != nil {
+	if err := h.establishSession(w, r, user, false, "password"); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "internal", "could not start your session")
 		return
 	}
@@ -138,6 +148,12 @@ func (h *Handler) SignIn(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	data, sid, err := h.sessions.FromRequest(r)
 	if err != nil {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "not signed in")
+		return
+	}
+	// The shared demo account is for products only — the onboarding portal behaves
+	// as if no one is signed in (no account menu, "Try it now" stays available).
+	if data.Demo {
 		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "not signed in")
 		return
 	}
@@ -172,27 +188,26 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Validate is the session-validation endpoint products / Kong call (mirrors the
-// docflow-auth `/validate` contract). It reads the central session cookie and
-// returns the user + tenant + role context.
+// Validate is the central session-validation endpoint products call (over HTTP, with
+// the session cookie). It returns the UNIVERSAL identity — the Zitadel sub + email.
+// Each product maps the sub to its own internal id / tenant / role on its side; this
+// service is standalone and asserts nothing product-specific.
 func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
 	data, _, err := h.sessions.FromRequest(r)
 	if err != nil {
 		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]any{"valid": false})
 		return
 	}
-	out := map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"valid":          true,
-		"user_id":        data.UserID,
-		"tenant_id":      data.TenantID,
-		"role":           data.Role,
+		"sub":            data.ZitadelSub, // universal identity (the IdP subject)
 		"email":          data.Email,
 		"email_verified": data.EmailVerified,
-	}
-	for k, v := range data.Attrs {
-		out[k] = v // role_tier, custom_role_id, custom_role_name, is_org_member
-	}
-	httpx.WriteJSON(w, http.StatusOK, out)
+		"first_name":     data.FirstName,
+		"last_name":      data.LastName,
+		"display_name":   data.DisplayName,
+		"phone":          data.Phone,
+	})
 }
 
 // Logout destroys the session.
@@ -203,55 +218,115 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// SSOStart begins a federated SSO flow (stub → Zitadel IdP intent).
-func (h *Handler) SSOStart(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, h.cfg.FrontendURL, http.StatusFound)
+// DemoLogin signs the visitor in as the shared demo account — "Try it now" with no
+// signup. The demo user is a real account on the shared SSO session, so the demo
+// carries across every product.
+func (h *Handler) DemoLogin(w http.ResponseWriter, r *http.Request) {
+	if !h.cfg.DemoEnabled || h.cfg.DemoPassword == "" {
+		httpx.WriteError(w, http.StatusNotFound, "demo_disabled", "Demo isn't available.")
+		return
+	}
+	user, err := h.users.EnsureUser(r.Context(), identity.RegisterInput{
+		FirstName:   h.cfg.DemoFirstName,
+		LastName:    h.cfg.DemoLastName,
+		DisplayName: "Demo",
+		Email:       h.cfg.DemoEmail,
+		Password:    h.cfg.DemoPassword,
+		Company:     "Simplify",
+		JobTitle:    "Demo",
+	})
+	if err != nil {
+		h.log.Error("demo login: ensure user", zap.Error(err))
+		httpx.WriteError(w, http.StatusBadGateway, "demo_unavailable", "Demo isn't available right now.")
+		return
+	}
+	user.EmailVerified = true
+	if err := h.establishSession(w, r, user, true, "demo"); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal", "could not start the demo session")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "next": "/", "demo": true})
 }
 
 // establishSession creates the central SSO session for an authenticated user.
 //
-// When the shared platform DB is wired (h.dir != nil), the session is written in
-// the DocFlow schema — internal app_users.id as UserID, plus tenant + role attrs —
-// so products reading the shared Redis pick it up directly (no second login).
-func (h *Handler) establishSession(w http.ResponseWriter, r *http.Request, user identity.User) error {
+// The session's identity is UNIVERSAL: the Zitadel sub. This service is standalone —
+// it stores no product-specific ids, tenants or roles. Each product validates the
+// session via /auth/validate and maps the sub to its own internal id on its side.
+func (h *Handler) establishSession(w http.ResponseWriter, r *http.Request, user identity.User, demo bool, authMethod string) error {
 	data := session.Data{
-		UserID:        user.ID, // overwritten with internal id below when DB is present
+		UserID:        user.ID, // the universal identity = Zitadel sub
 		ZitadelSub:    user.ID,
 		Email:         user.Email,
 		FirstName:     user.FirstName,
 		LastName:      user.LastName,
 		DisplayName:   user.DisplayName,
 		Phone:         user.Phone,
-		Role:          user.Role,
 		EmailVerified: user.EmailVerified,
 		PhoneVerified: user.PhoneVerified,
+		Demo:          demo,
 	}
 
-	if h.dir != nil {
-		internalID, storedRole, err := h.dir.ResolveOrCreate(
-			r.Context(), user.ID, user.Email, user.FirstName, user.LastName, user.Role,
-			userstore.Profile{NickName: user.DisplayName, Phone: user.Phone},
-		)
-		if err != nil {
-			h.log.Error("session: resolve user in shared directory", zap.Error(err))
-			return err
-		}
-		tc := h.dir.ResolveTenantContext(r.Context(), internalID)
-		data.UserID = internalID
-		data.TenantID = tc.TenantID
-		if storedRole != "" {
-			data.Role = storedRole
-		}
-		data.Attrs = map[string]any{
-			"role_tier":        tc.RoleTier,
-			"custom_role_id":   tc.CustomRoleID,
-			"custom_role_name": tc.CustomRoleName,
-			"is_org_member":    tc.IsMember,
-		}
+	if _, err := h.sessions.Create(r.Context(), w, data); err != nil {
+		return err
 	}
 
-	_, err := h.sessions.Create(r.Context(), w, data)
-	return err
+	// Persist to the onboarding DB (best-effort — never block sign-in on it).
+	h.persistUser(r, user, demo, authMethod)
+	return nil
+}
+
+// persistUser syncs the account into the onboarding DB and appends a login-audit row.
+// Everything is keyed by the UNIVERSAL identity (user.ID == Zitadel sub) — no
+// product-specific ids. Best-effort: failures are logged, not surfaced.
+func (h *Handler) persistUser(r *http.Request, user identity.User, demo bool, authMethod string) {
+	if h.db == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer cancel()
+
+	if err := h.db.UpsertUser(ctx, store.UserRecord{
+		ZitadelSub:    user.ID,
+		Email:         user.Email,
+		FirstName:     user.FirstName,
+		LastName:      user.LastName,
+		DisplayName:   user.DisplayName,
+		Phone:         user.Phone,
+		Company:       user.Company,
+		JobTitle:      user.JobTitle,
+		AuthMethod:    authMethod,
+		EmailVerified: user.EmailVerified,
+		PhoneVerified: user.PhoneVerified,
+		IsDemo:        demo,
+	}); err != nil {
+		h.log.Warn("persist user failed", zap.Error(err))
+	}
+
+	if err := h.db.RecordLogin(ctx, store.LoginAudit{
+		UserID:     user.ID, // universal subject (Zitadel sub)
+		Email:      user.Email,
+		AuthMethod: authMethod,
+		Success:    true,
+		IP:         clientIP(r),
+		UserAgent:  r.UserAgent(),
+	}); err != nil {
+		h.log.Warn("record login failed", zap.Error(err))
+	}
+}
+
+// clientIP extracts the best-guess client IP (proxy-aware).
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 // debug returns the code only when DEBUG_RETURN_CODE is on (dev/testing).

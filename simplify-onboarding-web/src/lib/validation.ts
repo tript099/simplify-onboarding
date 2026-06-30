@@ -22,8 +22,7 @@ export function isWorkEmail(email: string): boolean {
   return !FREE_EMAIL_DOMAINS.has(domain);
 }
 
-export const registerSchema = z
-  .object({
+export const registerSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required"),
   lastName: z.string().trim().min(1, "Last name is required"),
   displayName: z.string().trim().optional(),
@@ -48,15 +47,10 @@ export const registerSchema = z
     .regex(/[a-z]/, "Include a lowercase letter")
     .regex(/[A-Z]/, "Include an uppercase letter")
     .regex(/[0-9]/, "Include a number"),
-  confirmPassword: z.string().min(1, "Please confirm your password"),
   consent: z
     .boolean()
     .refine((v) => v === true, { message: "Please accept the privacy policy to continue" }),
-  })
-  .refine((d) => d.password === d.confirmPassword, {
-    message: "Passwords don't match",
-    path: ["confirmPassword"],
-  });
+});
 
 export type RegisterValues = z.infer<typeof registerSchema>;
 

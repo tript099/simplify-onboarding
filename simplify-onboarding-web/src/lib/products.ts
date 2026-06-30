@@ -153,6 +153,35 @@ export function getProduct(key: string | undefined): Product | undefined {
 }
 
 /**
+ * Validate a post-login `redirect` target against the known product app origins.
+ *
+ * A product (e.g. DocFlow) sends the user here to sign in with `?redirect=<its URL>`;
+ * after login we send them back. We only honor URLs whose origin is a real product
+ * app — never an arbitrary origin — so this can't become an open redirect.
+ */
+export function safeProductRedirect(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw, window.location.origin);
+  } catch {
+    return null;
+  }
+  // Same-origin (the portal itself) isn't a "product" — ignore so we use in-app nav.
+  if (url.origin === window.location.origin) return null;
+  const allowed = new Set<string>();
+  for (const p of PRODUCTS) {
+    if (!p.launchUrl) continue;
+    try {
+      allowed.add(new URL(p.launchUrl).origin);
+    } catch {
+      /* ignore malformed launchUrl */
+    }
+  }
+  return allowed.has(url.origin) ? url.toString() : null;
+}
+
+/**
  * Backend `/auth/clients` returns product text but no `icon`/`accent` (those are
  * React components / presentation, not JSON). Hydrate a raw backend product into a
  * full Product by overlaying local presentation, keyed by `key`.

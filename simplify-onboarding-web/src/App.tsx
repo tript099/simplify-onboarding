@@ -6,6 +6,7 @@ const Home = lazy(() => import("@/routes/Home"));
 const Auth = lazy(() => import("@/routes/Auth"));
 const VerifyEmail = lazy(() => import("@/routes/VerifyEmail"));
 const Product = lazy(() => import("@/routes/Product"));
+const BookDemo = lazy(() => import("@/routes/BookDemo"));
 const NotFound = lazy(() => import("@/routes/NotFound"));
 
 function RouteFallback() {
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/verify" element={<VerifyEmail />} />
           <Route path="/product/:key" element={<Product />} />
+          <Route path="/demo" element={<BookDemo />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>

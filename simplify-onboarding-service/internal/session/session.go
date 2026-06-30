@@ -37,6 +37,10 @@ type Data struct {
 	PhoneVerified bool           `json:"phone_verified"`
 	CreatedAt     time.Time      `json:"created_at"`
 	Attrs         map[string]any `json:"attrs,omitempty"`
+	// Demo marks the shared demo-account session. Products consume it normally (it's
+	// a real SSO session), but the onboarding portal hides it — /me treats a demo
+	// session as signed-out so the portal never shows a "logged in" demo user.
+	Demo bool `json:"demo,omitempty"`
 }
 
 // Service stores and retrieves sessions in Redis.
@@ -104,13 +108,18 @@ func (s *Service) Get(ctx context.Context, id string) (*Data, error) {
 		return nil, fmt.Errorf("unmarshal session: %w", err)
 	}
 	// In persist mode the session never expires on its own — skip the absolute-max
-	// check and don't re-arm a TTL (it has none).
+	// check. Crucially, HEAL the key back to no-expiry: this is a SHARED session and
+	// another service on the same Redis (DocFlow's BFF) re-arms a sliding TTL on every
+	// read. Without this, that TTL would eventually expire the session and sign the
+	// user out of the portal too. PERSIST strips any TTL so it lives until logout.
 	if !s.persist {
 		if time.Since(data.CreatedAt) > s.absMax {
 			_ = s.rdb.Del(ctx, key(id)).Err()
 			return nil, fmt.Errorf("session expired (absolute max)")
 		}
 		_ = s.rdb.Expire(ctx, key(id), s.slidingTTL).Err()
+	} else {
+		_ = s.rdb.Persist(ctx, key(id)).Err()
 	}
 	return &data, nil
 }

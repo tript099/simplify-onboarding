@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -143,6 +144,61 @@ func (p *DevProvider) Get(ctx context.Context, id string) (User, error) {
 		return User{}, err
 	}
 	return rec.User, nil
+}
+
+// LookupByLogin (dev) resolves by email only — phone isn't indexed in dev.
+func (p *DevProvider) LookupByLogin(ctx context.Context, identifier string) (User, error) {
+	id, err := p.rdb.Get(ctx, emailKey(NormalizeEmail(identifier))).Result()
+	if errors.Is(err, redis.Nil) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("lookup login: %w", err)
+	}
+	return p.Get(ctx, id)
+}
+
+// StartLoginOTP (dev) generates a code locally and logs it.
+func (p *DevProvider) StartLoginOTP(ctx context.Context, identifier string) (LoginOTPHandle, string, error) {
+	user, err := p.LookupByLogin(ctx, identifier)
+	if err != nil {
+		return LoginOTPHandle{}, "", err
+	}
+	code, err := genCode()
+	if err != nil {
+		return LoginOTPHandle{}, "", err
+	}
+	channel := "email"
+	if !strings.Contains(identifier, "@") {
+		channel = "mobile"
+	}
+	p.log.Info("DEV login code", zap.String("channel", channel), zap.String("user_id", user.ID), zap.String("code", code))
+	return LoginOTPHandle{UserID: user.ID, Channel: channel, CodeHash: hashCode(code)}, code, nil
+}
+
+// VerifyLoginOTP (dev) compares the code to the stored hash in the handle.
+func (p *DevProvider) VerifyLoginOTP(ctx context.Context, handle LoginOTPHandle, code string) (User, error) {
+	if subtle.ConstantTimeCompare([]byte(hashCode(code)), []byte(handle.CodeHash)) != 1 {
+		return User{}, ErrBadCode
+	}
+	return p.Get(ctx, handle.UserID)
+}
+
+// EnsureUser (dev) idempotently creates a user with a verified email.
+func (p *DevProvider) EnsureUser(ctx context.Context, in RegisterInput) (User, error) {
+	if u, err := p.LookupByLogin(ctx, in.Email); err == nil {
+		return u, nil
+	}
+	user, _, err := p.Register(ctx, in)
+	if errors.Is(err, ErrEmailTaken) {
+		return p.LookupByLogin(ctx, in.Email)
+	}
+	if err != nil {
+		return User{}, err
+	}
+	_ = p.mutate(ctx, user.ID, func(r *record) { r.EmailVerified = true })
+	user.EmailVerified = true
+	return user, nil
 }
 
 // ── code helpers ──────────────────────────────────────────────────

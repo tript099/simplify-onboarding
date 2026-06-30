@@ -1,44 +1,77 @@
-# Backend container stack: Redis + simplify-onboarding-service.
-# Production identity = Zitadel (it stores passwords and SENDS the verification
-# email). Zitadel config is read from the repo-root .env (../../.env).
+# Standalone onboarding service. Config lives in this folder's `.env` (copy from
+# `.env.example`). It depends only on Zitadel (the shared IdP) + its OWN Redis +
+# its OWN Postgres (both defined below). MailForge + the scheduler are shared infra
+# reached over HTTP. Products validate the central session via /auth/validate.
 #
-#   docker compose --env-file ../../.env up -d --build
+# Run (from this folder):
+#   docker compose up -d --build
 #   docker compose logs -f onboarding
 #   docker compose down
 #
-# Run the frontend yourself (npm run dev on :3100); its Vite proxy reaches this
-# service at localhost:8090.
+# (The onboarding service joins DocFlow's network so DocFlow's auth can reach
+# http://onboarding:8090/auth/validate — the external `docflow` network below.)
 services:
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-
   onboarding:
     build: .
     restart: unless-stopped
     ports:
       - "8090:8090"
-    environment:
-      APP_ENV: development
-      PORT: "8090"
-      REDIS_URL: redis://redis:6379
-      REDIS_DB: "1"
-
-      # Identity → Zitadel (the same instance docflow uses).
-      IDENTITY_PROVIDER: zitadel
-      ZITADEL_ISSUER: ${ZITADEL_ISSUER}
-      ZITADEL_INTERNAL_URL: ${ZITADEL_INTERNAL_URL:-${ZITADEL_ISSUER}}
-      ZITADEL_CLIENT_ID: ${ZITADEL_CLIENT_ID}
-      ZITADEL_SERVICE_PAT: ${ZITADEL_SERVICE_PAT}
-      ZITADEL_ORG_ID: ${ZITADEL_ORG_ID}
-
-      # Local testing only: have Zitadel RETURN the code (instead of emailing it)
-      # and surface it in the API response. MUST be false/unset in production.
-      DEBUG_RETURN_CODE: ${DEBUG_RETURN_CODE:-false}
-
-      COOKIE_SECURE: "false"
-      FRONTEND_URL: http://localhost:3100
-      CORS_ALLOWED_ORIGINS: http://localhost:3100
-      SIMPLIFYCORE_STUB: "true"
+    # All runtime config — secrets included — comes from this service's own .env.
+    env_file:
+      - .env
+    volumes:
+      # Team-notify recipients — bind-mounted so edits apply live (no rebuild).
+      - ./config/demo-recipients.json:/app/config/demo-recipients.json:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # reach MailForge on the host
     depends_on:
-      - redis
+      onboarding-db:
+        condition: service_healthy
+      onboarding-redis:
+        condition: service_started
+    networks:
+      docflow:
+        # DocFlow's BFF validates the central session at http://onboarding:8090.
+        aliases:
+          - onboarding
+      onbnet: {}
+
+  # The onboarding service's dedicated session store (sessions, OTP, visitor state).
+  onboarding-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - onbnet
+
+  # The onboarding service's dedicated database.
+  onboarding-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: onboarding
+      POSTGRES_PASSWORD: onboarding
+      POSTGRES_DB: onboarding
+    ports:
+      - "5440:5432" # host access for inspection (psql -h localhost -p 5440)
+    volumes:
+      - onboarding_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onboarding -d onboarding"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - onbnet
+
+volumes:
+  onboarding_db_data:
+
+networks:
+  docflow:
+    external: true
+    # The network DocFlow's compose created. Default project name for the
+    # "DocFlow AWS" folder is `docflowaws`; override with DOCFLOW_NETWORK if yours
+    # differs (check: `docker network ls | grep internal`).
+    name: ${DOCFLOW_NETWORK:-docflowaws_internal}
+  onbnet:
+    driver: bridge

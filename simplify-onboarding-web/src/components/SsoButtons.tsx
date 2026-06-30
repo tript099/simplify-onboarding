@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { ssoUrl } from "@/lib/api";
 
@@ -23,21 +24,70 @@ function MicrosoftGlyph() {
   );
 }
 
-export function SsoButtons({ productKey }: { productKey?: string }) {
-  const params = productKey ? { client_id: productKey } : undefined;
+export function SsoButtons({ productKey, redirectTo }: { productKey?: string; redirectTo?: string | null }) {
+  const popupRef = useRef<Window | null>(null);
+
+  // The SSO popup posts back here when the session is established. We then send the
+  // (already-signed-in) opener to the product it came from, or the portal home.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return; // only our own callback page
+      const data = e.data as
+        | { source?: string; ok?: boolean; redirect?: string; error?: string }
+        | null;
+      if (data?.source !== "simplify-sso") return;
+      try {
+        popupRef.current?.close();
+      } catch {
+        /* ignore */
+      }
+      if (data.ok) {
+        window.location.assign(data.redirect || "/");
+      } else {
+        // Surface the failure on the main window (the popup is gone).
+        window.location.assign(`/auth?mode=signin&error=${data.error || "sso_failed"}`);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  const openSso = (provider: "google" | "microsoft") => {
+    const params: Record<string, string> = { display: "popup" };
+    if (productKey) params.client_id = productKey;
+    if (redirectTo) params.redirect = redirectTo;
+    const url = ssoUrl(provider, params);
+
+    // Centered popup. If the browser blocks it, fall back to a full-page redirect
+    // (drop display=popup so the backend does a normal server-side redirect).
+    const w = 480;
+    const h = 640;
+    const left = window.screenX + Math.max(0, (window.outerWidth - w) / 2);
+    const top = window.screenY + Math.max(0, (window.outerHeight - h) / 2);
+    const popup = window.open(
+      url,
+      "simplify-sso",
+      `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`,
+    );
+    if (!popup) {
+      const { display: _drop, ...rest } = params;
+      void _drop;
+      window.location.href = ssoUrl(provider, rest);
+      return;
+    }
+    popupRef.current = popup;
+    popup.focus();
+  };
+
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Button asChild variant="secondary" size="lg">
-        <a href={ssoUrl("google", params)}>
-          <GoogleGlyph />
-          Google
-        </a>
+      <Button type="button" variant="secondary" size="lg" onClick={() => openSso("google")}>
+        <GoogleGlyph />
+        Google
       </Button>
-      <Button asChild variant="secondary" size="lg">
-        <a href={ssoUrl("microsoft", params)}>
-          <MicrosoftGlyph />
-          Microsoft
-        </a>
+      <Button type="button" variant="secondary" size="lg" onClick={() => openSso("microsoft")}>
+        <MicrosoftGlyph />
+        Microsoft
       </Button>
     </div>
   );

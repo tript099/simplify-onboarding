@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your meeting is scheduled</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.08);">
+
+        <tr><td style="height:6px;background:linear-gradient(90deg,#2563eb,#7c3aed);"></td></tr>
+
+        <tr><td style="padding:28px 36px 8px;">
+          <span style="font-size:20px;font-weight:800;letter-spacing:-0.02em;">Simplify</span>
+        </td></tr>
+
+        <tr><td style="padding:8px 36px 0;">
+          <h1 style="margin:0;font-size:26px;line-height:1.2;font-weight:800;letter-spacing:-0.02em;">
+            You're all set, {{.FirstName}} 📅
+          </h1>
+          <p style="margin:14px 0 0;font-size:15px;line-height:1.6;color:#475569;">
+            Your {{.RequestLabel}}{{if .ProductName}} for <strong style="color:#0f172a;">{{.ProductName}}</strong>{{end}} is scheduled. Here are the details.
+          </p>
+        </td></tr>
+
+        <!-- meeting card -->
+        <tr><td style="padding:22px 36px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+            <tr><td style="padding:18px 20px 6px;">
+              <p style="margin:0 0 2px;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">When</p>
+              <p style="margin:0;font-size:18px;font-weight:700;color:#0f172a;">{{.WhenLine}}</p>
+            </td></tr>
+            <tr><td style="padding:8px 20px 20px;">
+              <a href="{{.MeetingURL}}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:12px 22px;border-radius:10px;">Join the meeting &rarr;</a>
+              <p style="margin:10px 0 0;font-size:12px;color:#94a3b8;word-break:break-all;">{{.MeetingURL}}</p>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:26px 36px 30px;">
+          <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 16px;">
+          <p style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">
+            A calendar invite has been sent to your inbox. Need to reschedule? Just reply to this email.<br>
+            &copy; {{.Year}} Simplify &middot; One account, every product
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

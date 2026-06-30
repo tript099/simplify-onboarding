@@ -58,7 +58,7 @@ export function ProblemCard({ product, index = 0 }: { product: Product; index?: 
       transition={{ duration: 0.5, ease, delay: (index % 4) * 0.05 }}
     >
       {launch ? (
-        <a href={launch} className={cardClass}>
+        <a href={launch} target="_blank" rel="noopener noreferrer" className={cardClass}>
           {inner as ReactNode}
         </a>
       ) : (

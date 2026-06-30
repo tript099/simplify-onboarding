@@ -132,6 +132,49 @@ export async function signIn(email: string, password: string): Promise<{ next: s
   return postJSON<{ next: string }>("/login", { email, password });
 }
 
+/**
+ * Demo sign-in — "Try it now" with no signup. Signs in as the shared demo account
+ * on the central SSO session, so the demo carries across every product.
+ */
+export async function demoLogin(): Promise<{ next: string }> {
+  if (USE_MOCK) {
+    await sleep(700);
+    // The demo account is for products only — the onboarding portal stays
+    // "signed out", so we deliberately do NOT set the portal's mock user here.
+    return { next: "/" };
+  }
+  return postJSON<{ next: string }>("/demo", {});
+}
+
+// ── passwordless sign-in (one-time code) ──────────────────────────
+export async function startLoginOtp(
+  identifier: string,
+): Promise<{ verificationId: string; channel: "email" | "mobile"; resendIn: number; debugCode?: string }> {
+  if (USE_MOCK) {
+    await sleep(700);
+    if (identifier.endsWith("@nouser.com")) {
+      throw new ApiError(404, "No account found for that email or mobile.", "no_account");
+    }
+    return { verificationId: crypto.randomUUID(), channel: identifier.includes("@") ? "email" : "mobile", resendIn: 30 };
+  }
+  return postJSON("/login/otp/start", { identifier });
+}
+
+export async function verifyLoginOtp(
+  verificationId: string,
+  code: string,
+): Promise<{ verified: boolean; next: string }> {
+  if (USE_MOCK) {
+    await sleep(700);
+    if (code !== "12345678") {
+      throw new ApiError(400, "That code isn't right. Check it and try again.", "bad_otp");
+    }
+    setMockUser({ id: crypto.randomUUID(), email: "you@company.com", role: "member", emailVerified: true, phoneVerified: false });
+    return { verified: true, next: "/" };
+  }
+  return postJSON("/login/otp/verify", { verificationId, code });
+}
+
 /** Returns the signed-in user, or null when not authenticated. */
 export async function me(): Promise<SessionUser | null> {
   if (USE_MOCK) {
@@ -183,7 +226,38 @@ export async function verifyEmailOtp(
 /** True only in the standalone mock (no backend). */
 export const IS_MOCK = USE_MOCK;
 
+// ── demo / POC / contact requests (sales-led motion) ──────────────
+export type DemoType = "demo" | "poc" | "contact";
+
+export interface DemoRequestPayload {
+  type: DemoType;
+  product?: string;
+  [field: string]: unknown;
+}
+
+export async function submitDemoRequest(
+  payload: DemoRequestPayload,
+): Promise<{ ok: boolean; requestId?: string }> {
+  if (USE_MOCK) {
+    await sleep(900);
+    return { ok: true, requestId: crypto.randomUUID() };
+  }
+  // /onb/* lives at the root (its own Vite proxy key) — NOT under the /auth base.
+  const res = await fetch("/onb/demo", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await res.json().catch(() => ({}));
+    throw new ApiError(res.status, detail.message ?? "Request failed", detail.code);
+  }
+  return res.json() as Promise<{ ok: boolean; requestId?: string }>;
+}
+
 export function ssoUrl(provider: "google" | "microsoft", params?: Record<string, string>): string {
-  const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+  const query = params ? new URLSearchParams(params).toString() : "";
+  const qs = query ? `?${query}` : "";
   return USE_MOCK ? `#${provider}-sso-mock` : `${BASE}/sso/${provider}${qs}`;
 }

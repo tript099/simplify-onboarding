@@ -9,9 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MotionSplit, type MotionChoice } from "@/components/MotionSplit";
-import { fetchProducts } from "@/lib/api";
+import { demoLogin, fetchProducts } from "@/lib/api";
 import { DATA_RESIDENCY, getProduct } from "@/lib/products";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, useRefreshAuth } from "@/hooks/useAuth";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -34,9 +34,11 @@ export default function ProductPage() {
   const { key } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const refreshAuth = useRefreshAuth();
   const { isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
   const product = getProduct(key);
   const [choice, setChoice] = useState<MotionChoice>("self_serve");
+  const [demoing, setDemoing] = useState(false);
 
   if (isLoading) {
     return (
@@ -65,23 +67,57 @@ export default function ProductPage() {
   const isTeam = !product.enterpriseOnly && choice === "team";
   // Signed in + the product has an app → "Open" it (shared SSO account).
   const canLaunch = !!user && !!product.launchUrl;
-  const primaryCta = canLaunch
-    ? `Open ${product.name} →`
-    : product.enterpriseOnly
-      ? "Run a proof of concept on your data →"
-      : isTeam
-        ? "Book a demo →"
-        : "Try it now →";
+  // "Try it now" (sandbox on sample data) is offered to EVERYONE — including
+  // enterprise. Seeing it work never requires a sales calendar; demo / POC stay
+  // available alongside, for proving on the buyer's own data.
+  const primaryCta = canLaunch ? `Open ${product.name} →` : "Try it now →";
+  // Sales-led options shown as separate actions (not the only path to value).
+  const showSalesActions = product.enterpriseOnly || isTeam;
+
+  const goDemo = (type: "demo" | "poc" | "contact") =>
+    navigate(`/demo?product=${product.key}&type=${type}`);
+
+  // "Try it now" — sign in as the shared demo account (no signup) and open the
+  // product. Because it's a real SSO session, the same demo carries to every product.
+  const runDemo = async () => {
+    if (demoing) return;
+    setDemoing(true);
+    // Open the tab synchronously, INSIDE the click gesture, so the popup blocker
+    // allows it. We keep the handle (no "noopener" — that returns null) and point it
+    // at the product once the demo session is established. Navigating after an await
+    // is fine because the window already exists.
+    const popup = product.launchUrl ? window.open("", "_blank") : null;
+    try {
+      await demoLogin();
+      await refreshAuth();
+      if (popup && product.launchUrl) {
+        try {
+          popup.opener = null; // sever the opener reference for safety
+        } catch {
+          /* some browsers disallow setting opener — ignore */
+        }
+        popup.location.replace(product.launchUrl);
+      } else if (product.launchUrl) {
+        // Popup was blocked — fall back to navigating this tab to the product.
+        window.location.href = product.launchUrl;
+      } else {
+        navigate(`/auth?product=${product.key}`);
+      }
+    } catch {
+      popup?.close();
+      // Fall back to the value-first register flow if the demo isn't available.
+      navigate(`/auth?product=${product.key}`);
+    } finally {
+      setDemoing(false);
+    }
+  };
 
   const onPrimary = () => {
     if (canLaunch) {
-      window.location.href = product.launchUrl!;
-    } else if (product.enterpriseOnly || isTeam) {
-      // Sales-led: would open the demo / POC flow.
-      navigate(`/auth?product=${product.key}&mode=signin`);
+      window.open(product.launchUrl!, "_blank", "noopener,noreferrer");
     } else {
-      // Self-serve value-first: try the scoped action, register at the value wall.
-      navigate(`/auth?product=${product.key}`);
+      // Try it now — sandbox on sample data via the shared demo account. No booking.
+      void runDemo();
     }
   };
 
@@ -168,17 +204,40 @@ export default function ProductPage() {
               </div>
             )}
 
-            <Button onClick={onPrimary} size="lg" className="mt-5 w-full">
-              {primaryCta}
+            <Button onClick={onPrimary} disabled={demoing} size="lg" className="mt-5 w-full">
+              {demoing ? "Starting your demo…" : primaryCta}
             </Button>
 
+            {!canLaunch && (
+              <p className="mt-2.5 text-center text-xs text-muted-foreground">
+                No booking — opens a live sandbox on sample data. Works across every product.
+              </p>
+            )}
+
+            {/* Sales-led paths live ALONGSIDE "Try it now", never gate first value. */}
+            {showSalesActions && (
+              <>
+                <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+                  <span className="h-px flex-1 bg-border" />
+                  or prove it on your data
+                  <span className="h-px flex-1 bg-border" />
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <Button variant="outline" onClick={() => goDemo("demo")}>
+                    Book a demo
+                  </Button>
+                  <Button variant="outline" onClick={() => goDemo("poc")}>
+                    Request a POC
+                  </Button>
+                </div>
+              </>
+            )}
+
             <div className="mt-4 flex items-center justify-center gap-4 text-xs text-muted-foreground">
-              {(product.enterpriseOnly || isTeam) && (
-                <button className="font-medium transition-colors hover:text-foreground">
-                  {product.enterpriseOnly ? "See it on your use case" : "Request a POC"}
-                </button>
-              )}
-              <button className="font-medium transition-colors hover:text-foreground">
+              <button
+                onClick={() => goDemo("contact")}
+                className="font-medium transition-colors hover:text-foreground"
+              >
                 Get pricing &amp; security answers
               </button>
             </div>
@@ -191,7 +250,10 @@ export default function ProductPage() {
             <span className="text-xs">
               Prototype · single sign-on across all products
             </span>
-            <button className="text-xs font-medium transition-colors hover:text-foreground">
+            <button
+              onClick={() => goDemo("contact")}
+              className="text-xs font-medium transition-colors hover:text-foreground"
+            >
               Talk to Sales
             </button>
           </div>

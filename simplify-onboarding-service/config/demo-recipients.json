@@ -1,0 +1,5 @@
+{
+  "_comment": "Simplify team addresses notified on demo/POC/contact requests. 'default' always gets notified; each rule adds recipients when its filters (type and/or product) match. Edit freely — reloaded on each request. A UI will manage this later.",
+  "default": ["manjul.t@simplifyai.id"],
+  "rules": []
+}
