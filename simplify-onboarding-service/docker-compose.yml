@@ -8,8 +8,10 @@
 #   docker compose logs -f onboarding
 #   docker compose down
 #
-# (The onboarding service joins DocFlow's network so DocFlow's auth can reach
-# http://onboarding:8090/auth/validate — the external `docflow` network below.)
+# Cross-network by design: this service is NEVER on a shared Docker network with
+# DocFlow (or any other Simplify product). It publishes port 8090 on the host and
+# is reached over HTTP — products set ONBOARDING_VALIDATE_URL to its public URL
+# (deployed) or http://host.docker.internal:8090/auth/validate (same host, local).
 services:
   onboarding:
     build: .
@@ -30,11 +32,7 @@ services:
       onboarding-redis:
         condition: service_started
     networks:
-      docflow:
-        # DocFlow's BFF validates the central session at http://onboarding:8090.
-        aliases:
-          - onboarding
-      onbnet: {}
+      - onbnet
 
   # The onboarding service's dedicated session store (sessions, OTP, visitor state).
   onboarding-redis:
@@ -67,11 +65,7 @@ volumes:
   onboarding_db_data:
 
 networks:
-  docflow:
-    external: true
-    # The network DocFlow's compose created. Default project name for the
-    # "DocFlow AWS" folder is `docflowaws`; override with DOCFLOW_NETWORK if yours
-    # differs (check: `docker network ls | grep internal`).
-    name: ${DOCFLOW_NETWORK:-docflowaws_internal}
+  # Onboarding runs on its OWN isolated network only. Products reach it over HTTP
+  # (host-published :8090 / public URL), never by joining this network.
   onbnet:
     driver: bridge
