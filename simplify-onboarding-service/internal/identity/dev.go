@@ -278,6 +278,52 @@ func genCode() (string, error) {
 	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
+// SendPasswordReset (dev): resolves the user, stores a reset code, and logs the
+// completion link (no real email in dev). Returns ErrNotFound when unknown.
+func (p *DevProvider) SendPasswordReset(ctx context.Context, email, urlTemplate string) error {
+	id, err := p.rdb.Get(ctx, emailKey(NormalizeEmail(email))).Result()
+	if err != nil || id == "" {
+		return ErrNotFound
+	}
+	code, err := genCode()
+	if err != nil {
+		return err
+	}
+	if err := p.rdb.Set(ctx, codeKey("reset", id), code, p.codeTTL).Err(); err != nil {
+		return fmt.Errorf("store reset code: %w", err)
+	}
+	link := strings.NewReplacer("{{.UserID}}", id, "{{.Code}}", code).Replace(urlTemplate)
+	p.log.Info("dev password reset (no email sent)", zap.String("email", email), zap.String("reset_link", link))
+	return nil
+}
+
+// ResetPassword (dev): verifies the code and sets the new password hash.
+func (p *DevProvider) ResetPassword(ctx context.Context, userID, code, newPassword string) error {
+	want, err := p.rdb.Get(ctx, codeKey("reset", userID)).Result()
+	if err != nil || want == "" || subtle.ConstantTimeCompare([]byte(want), []byte(code)) != 1 {
+		return ErrBadCode
+	}
+	raw, err := p.rdb.Get(ctx, userKey(userID)).Bytes()
+	if err != nil {
+		return ErrNotFound
+	}
+	var rec record
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return fmt.Errorf("decode user: %w", err)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	rec.PasswordHash = string(hash)
+	b, _ := json.Marshal(rec)
+	if err := p.rdb.Set(ctx, userKey(userID), b, 0).Err(); err != nil {
+		return fmt.Errorf("save user: %w", err)
+	}
+	_ = p.rdb.Del(ctx, codeKey("reset", userID)).Err()
+	return nil
+}
+
 func hashCode(code string) string {
 	sum := sha256.Sum256([]byte(code))
 	return hex.EncodeToString(sum[:])

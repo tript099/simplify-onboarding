@@ -540,6 +540,56 @@ func (p *ZitadelProvider) userIDByPhone(ctx context.Context, phone string) strin
 	return result.Result[0].ID
 }
 
+// SendPasswordReset resolves the user by email and asks Zitadel to email a reset
+// link. urlTemplate is where the emailed link points; Zitadel substitutes its own
+// {{.UserID}} and {{.Code}} placeholders. Returns ErrNotFound when no user matches.
+func (p *ZitadelProvider) SendPasswordReset(ctx context.Context, email, urlTemplate string) error {
+	if p.servicePAT == "" {
+		return ErrNotConfigured
+	}
+	uid := p.userIDByEmail(ctx, NormalizeEmail(email))
+	if uid == "" {
+		return ErrNotFound
+	}
+	body := map[string]any{
+		"sendLink": map[string]any{
+			"notificationType": "NOTIFICATION_TYPE_Email",
+			"urlTemplate":      urlTemplate,
+		},
+	}
+	status, raw, err := p.do(ctx, http.MethodPost, fmt.Sprintf("%s/v2/users/%s/password_reset", p.issuer, uid), body)
+	if err != nil {
+		return fmt.Errorf("zitadel password_reset: %w", err)
+	}
+	if status != http.StatusOK && status != http.StatusCreated && status != http.StatusNoContent {
+		return fmt.Errorf("zitadel password_reset: status %d: %s", status, string(raw))
+	}
+	return nil
+}
+
+// ResetPassword sets a new password using the one-time verification code Zitadel
+// emailed via SendPasswordReset. No session needed — the code proves ownership.
+func (p *ZitadelProvider) ResetPassword(ctx context.Context, userID, code, newPassword string) error {
+	if p.servicePAT == "" {
+		return ErrNotConfigured
+	}
+	body := map[string]any{
+		"verificationCode": code,
+		"newPassword":      map[string]any{"password": newPassword, "changeRequired": false},
+	}
+	status, raw, err := p.do(ctx, http.MethodPost, fmt.Sprintf("%s/v2/users/%s/password", p.issuer, userID), body)
+	if err != nil {
+		return fmt.Errorf("zitadel reset password: %w", err)
+	}
+	if status == http.StatusBadRequest || status == http.StatusPreconditionFailed {
+		return ErrBadCode // invalid/expired code (or password policy) — surfaced to the user
+	}
+	if status != http.StatusOK && status != http.StatusCreated && status != http.StatusNoContent {
+		return fmt.Errorf("zitadel reset password: status %d: %s", status, string(raw))
+	}
+	return nil
+}
+
 func (p *ZitadelProvider) userIDByEmail(ctx context.Context, email string) string {
 	status, raw, err := p.do(ctx, http.MethodPost, p.issuer+"/management/v1/users/_search", map[string]any{
 		"queries": []map[string]any{

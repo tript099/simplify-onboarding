@@ -84,6 +84,28 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Request a password-reset email. Resolves regardless of whether the address exists
+ * (the backend always returns 200 to prevent email enumeration).
+ */
+export async function forgotPassword(email: string): Promise<void> {
+  if (USE_MOCK) {
+    await sleep(600);
+    return;
+  }
+  await postJSON<{ ok: boolean }>("/password/forgot", { email });
+}
+
+/** Complete a password reset using the userID + code from the emailed link. */
+export async function resetPassword(userID: string, code: string, newPassword: string): Promise<void> {
+  if (USE_MOCK) {
+    await sleep(600);
+    if (code !== "123456") throw new ApiError(400, "This reset link is invalid or has expired.", "invalid_code");
+    return;
+  }
+  await postJSON<{ ok: boolean }>("/password/reset", { userID, code, newPassword });
+}
+
 /** Product registry — drives the BrandPanel, homepage cards and product pages. */
 export async function fetchProducts(): Promise<Product[]> {
   if (USE_MOCK) {

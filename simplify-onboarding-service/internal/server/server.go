@@ -157,6 +157,8 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 		r.Post("/demo", h.DemoLogin) // "Try it now" — shared demo account, no signup
 		r.Get("/me", h.Me)
 		r.Get("/logout", h.Logout)
+		r.Post("/password/forgot", h.ForgotPassword) // email a reset link
+		r.Post("/password/reset", h.ResetPassword)   // complete reset via emailed code
 		r.Get("/validate", h.Validate)
 		r.Get("/clients", h.Clients)
 		r.Get("/sso/{provider}", h.SSOStart)

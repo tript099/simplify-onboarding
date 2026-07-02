@@ -336,3 +336,67 @@ func (h *Handler) debug(code string) string {
 	}
 	return ""
 }
+
+type forgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ForgotPassword emails a password-reset link via the identity provider. It ALWAYS
+// returns 200 (never reveals whether the address exists) to prevent enumeration.
+func (h *Handler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req forgotPasswordRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil || strings.TrimSpace(req.Email) == "" {
+		bad(w, "email is required")
+		return
+	}
+	email := identity.NormalizeEmail(req.Email)
+	// The emailed link opens the SPA's reset view; the provider fills in UserID/Code.
+	urlTemplate := strings.TrimRight(h.cfg.FrontendURL, "/") + "/auth?view=reset&userID={{.UserID}}&code={{.Code}}"
+	if err := h.users.SendPasswordReset(r.Context(), email, urlTemplate); err != nil {
+		switch {
+		case errors.Is(err, identity.ErrNotFound):
+			h.log.Info("forgot password: no user for email — nothing sent", zap.String("email", email))
+		case errors.Is(err, identity.ErrNotConfigured):
+			h.log.Warn("forgot password: identity provider not configured")
+		default:
+			h.log.Warn("forgot password: send failed", zap.String("email", email), zap.Error(err))
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+type resetPasswordRequest struct {
+	UserID      string `json:"userID"`
+	Code        string `json:"code"`
+	NewPassword string `json:"newPassword"`
+}
+
+// ResetPassword completes a reset using the one-time code from the emailed link.
+// No session required — the code proves ownership.
+func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req resetPasswordRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		bad(w, "invalid request body")
+		return
+	}
+	switch {
+	case req.UserID == "" || req.Code == "":
+		bad(w, "this reset link is invalid or incomplete")
+		return
+	case len(req.NewPassword) < 8:
+		bad(w, "password must be at least 8 characters")
+		return
+	}
+	err := h.users.ResetPassword(r.Context(), req.UserID, req.Code, req.NewPassword)
+	switch {
+	case errors.Is(err, identity.ErrBadCode):
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_code", "This reset link is invalid or has expired. Please request a new one.")
+	case errors.Is(err, identity.ErrNotConfigured):
+		httpx.WriteError(w, http.StatusServiceUnavailable, "provider_unavailable", "Password reset is not configured.")
+	case err != nil:
+		h.log.Error("reset password failed", zap.Error(err))
+		httpx.WriteError(w, http.StatusInternalServerError, "internal", "could not reset your password")
+	default:
+		httpx.WriteJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	}
+}

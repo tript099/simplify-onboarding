@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -22,7 +22,7 @@ import {
   type RegisterValues,
   type SignInValues,
 } from "@/lib/validation";
-import { ApiError, register, signIn, startLoginOtp, verifyLoginOtp } from "@/lib/api";
+import { ApiError, register, signIn, startLoginOtp, verifyLoginOtp, forgotPassword, resetPassword } from "@/lib/api";
 import { safeProductRedirect } from "@/lib/products";
 import { OtpInput } from "@/components/OtpInput";
 import { useRefreshAuth } from "@/hooks/useAuth";
@@ -225,7 +225,7 @@ function CreateAccountForm({ productKey, redirectTo }: { productKey?: string; re
   );
 }
 
-function SignInForm({ productKey, redirectTo }: { productKey?: string; redirectTo: string | null }) {
+function SignInForm({ productKey, redirectTo, onForgotPassword }: { productKey?: string; redirectTo: string | null; onForgotPassword: (email?: string) => void }) {
   const [method, setMethod] = useState<"password" | "otp">("password");
 
   return (
@@ -256,12 +256,12 @@ function SignInForm({ productKey, redirectTo }: { productKey?: string; redirectT
         ))}
       </div>
 
-      {method === "password" ? <PasswordSignIn redirectTo={redirectTo} /> : <OtpSignIn redirectTo={redirectTo} />}
+      {method === "password" ? <PasswordSignIn redirectTo={redirectTo} onForgotPassword={onForgotPassword} /> : <OtpSignIn redirectTo={redirectTo} />}
     </div>
   );
 }
 
-function PasswordSignIn({ redirectTo }: { redirectTo: string | null }) {
+function PasswordSignIn({ redirectTo, onForgotPassword }: { redirectTo: string | null; onForgotPassword: (email?: string) => void }) {
   const navigate = useNavigate();
   const refreshAuth = useRefreshAuth();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -297,7 +297,7 @@ function PasswordSignIn({ redirectTo }: { redirectTo: string | null }) {
         label="Password"
         htmlFor="signin-password"
         error={errors.password?.message}
-        hint={<a href="#" className="text-muted-foreground transition-colors hover:text-foreground">Forgot password?</a>}
+        hint={<button type="button" onClick={() => onForgotPassword(watch("email"))} className="text-muted-foreground transition-colors hover:text-foreground">Forgot password?</button>}
       >
         <PasswordField id="signin-password" autoComplete="current-password" placeholder="Your password" invalid={!!errors.password} value={password} {...field("password")} />
       </Field>
@@ -415,13 +415,149 @@ function OtpSignIn({ redirectTo }: { redirectTo: string | null }) {
   );
 }
 
+// ── Forgot password: request a reset email ────────────────────────
+function ForgotPasswordForm({ onBack, initialEmail = "" }: { onBack: () => void; initialEmail?: string }) {
+  const [email, setEmail] = useState(initialEmail);
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await forgotPassword(email.trim());
+      setSent(true); // always success — the backend never reveals if the email exists
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't send the reset email. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (sent) {
+    return (
+      <div className="space-y-4 text-center">
+        <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
+        <h2 className="text-lg font-semibold text-foreground">Check your email</h2>
+        <p className="text-sm text-muted-foreground">
+          If an account exists for <span className="font-medium text-foreground">{email}</span>, we've sent a link to
+          reset your password. Check your spam folder if you don't see it.
+        </p>
+        <Button variant="outline" className="w-full" onClick={onBack}>Back to sign in</Button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold text-foreground">Reset your password</h2>
+        <p className="text-sm text-muted-foreground">Enter your email and we'll send you a link to reset it.</p>
+      </div>
+      <Field label="Work email" htmlFor="forgot-email">
+        <Input id="forgot-email" type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+      </Field>
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm font-medium text-destructive">{error}</p>
+      )}
+      <Button type="submit" size="lg" className="w-full" loading={busy}>Send reset link</Button>
+      <button type="button" onClick={onBack} className="w-full text-sm text-muted-foreground transition-colors hover:text-foreground">
+        Back to sign in
+      </button>
+    </form>
+  );
+}
+
+// ── Reset password: set a new one via the emailed link ────────────
+function ResetPasswordForm({ userID, code, onDone }: { userID: string; code: string; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await resetPassword(userID, code, password);
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't reset your password. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!userID || !code) {
+    return (
+      <div className="space-y-4 text-center">
+        <h2 className="text-lg font-semibold text-foreground">Invalid reset link</h2>
+        <p className="text-sm text-muted-foreground">This link is missing information or has expired. Please request a new one.</p>
+        <Button variant="outline" className="w-full" onClick={onDone}>Back to sign in</Button>
+      </div>
+    );
+  }
+
+  if (done) {
+    return (
+      <div className="space-y-4 text-center">
+        <CheckCircle2 className="mx-auto h-12 w-12 text-green-500" />
+        <h2 className="text-lg font-semibold text-foreground">Password updated</h2>
+        <p className="text-sm text-muted-foreground">Your password has been reset. Sign in with your new password.</p>
+        <Button size="lg" className="w-full" onClick={onDone}>Sign in</Button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4" noValidate>
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold text-foreground">Set a new password</h2>
+        <p className="text-sm text-muted-foreground">Choose a strong password you haven't used before.</p>
+      </div>
+      <Field label="New password" htmlFor="reset-password">
+        <PasswordField id="reset-password" autoComplete="new-password" placeholder="At least 8 characters" value={password} onChange={(e) => setPassword(e.target.value)} />
+      </Field>
+      {error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm font-medium text-destructive">{error}</p>
+      )}
+      <Button type="submit" size="lg" className="w-full" loading={busy}>Reset password</Button>
+    </form>
+  );
+}
+
 export default function AuthPage() {
-  const [params] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
   const productKey = params.get("client_id") ?? params.get("product") ?? undefined;
   const initialTab = params.get("mode") === "signin" ? "signin" : "create";
   // Where to land after auth — only honored if it points at a known product app.
   const redirectTo = safeProductRedirect(params.get("redirect"));
   const ssoError = params.get("error");
+  const view = params.get("view"); // "forgot" | "reset" | null
+  // Email typed on the sign-in form, carried into the forgot-password form.
+  const [prefillEmail, setPrefillEmail] = useState("");
+
+  // Toggle the forgot/reset views via the URL, preserving other params.
+  const setView = (v?: string) => {
+    const next = new URLSearchParams(params);
+    if (v) next.set("view", v);
+    else {
+      next.delete("view");
+      next.delete("userID");
+      next.delete("code");
+    }
+    setSearchParams(next, { replace: true });
+  };
+  // After a completed reset, drop the user on the Sign-in tab.
+  const goSignIn = () => setSearchParams(new URLSearchParams({ mode: "signin" }), { replace: true });
 
   return (
     <AuthLayout productKey={productKey}>
@@ -430,30 +566,38 @@ export default function AuthPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
       >
-        {ssoError && (
-          <p className="mb-5 rounded-lg border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm font-medium text-destructive">
-            {ssoError === "sso_unconfigured"
-              ? "That sign-in provider isn't enabled yet."
-              : "We couldn't complete that sign-in. Please try again."}
-          </p>
-        )}
-        <Tabs defaultValue={initialTab}>
-          <TabsList className="mb-7 w-full">
-            <TabsTrigger value="create" className="flex-1">
-              Create account
-            </TabsTrigger>
-            <TabsTrigger value="signin" className="flex-1">
-              Sign in
-            </TabsTrigger>
-          </TabsList>
+        {view === "reset" ? (
+          <ResetPasswordForm userID={params.get("userID") ?? ""} code={params.get("code") ?? ""} onDone={goSignIn} />
+        ) : view === "forgot" ? (
+          <ForgotPasswordForm initialEmail={prefillEmail} onBack={() => setView(undefined)} />
+        ) : (
+          <>
+            {ssoError && (
+              <p className="mb-5 rounded-lg border border-destructive/30 bg-destructive/10 px-3.5 py-2.5 text-sm font-medium text-destructive">
+                {ssoError === "sso_unconfigured"
+                  ? "That sign-in provider isn't enabled yet."
+                  : "We couldn't complete that sign-in. Please try again."}
+              </p>
+            )}
+            <Tabs defaultValue={initialTab}>
+              <TabsList className="mb-7 w-full">
+                <TabsTrigger value="create" className="flex-1">
+                  Create account
+                </TabsTrigger>
+                <TabsTrigger value="signin" className="flex-1">
+                  Sign in
+                </TabsTrigger>
+              </TabsList>
 
-          <TabsContent value="create">
-            <CreateAccountForm productKey={productKey} redirectTo={redirectTo} />
-          </TabsContent>
-          <TabsContent value="signin">
-            <SignInForm productKey={productKey} redirectTo={redirectTo} />
-          </TabsContent>
-        </Tabs>
+              <TabsContent value="create">
+                <CreateAccountForm productKey={productKey} redirectTo={redirectTo} />
+              </TabsContent>
+              <TabsContent value="signin">
+                <SignInForm productKey={productKey} redirectTo={redirectTo} onForgotPassword={(email) => { setPrefillEmail(email ?? ""); setView("forgot"); }} />
+              </TabsContent>
+            </Tabs>
+          </>
+        )}
       </motion.div>
     </AuthLayout>
   );

@@ -80,6 +80,16 @@ type Provider interface {
 	// EnsureUser idempotently provisions a user with a pre-verified email (for
 	// system/demo accounts). Returns the existing user if it already exists.
 	EnsureUser(ctx context.Context, in RegisterInput) (User, error)
+
+	// SendPasswordReset asks the provider to email a password-reset link to the
+	// address. urlTemplate is where the link points; the provider substitutes its
+	// own {{.UserID}}/{{.Code}} placeholders. Returns ErrNotFound when no user
+	// matches (callers swallow it to prevent email enumeration).
+	SendPasswordReset(ctx context.Context, email, urlTemplate string) error
+
+	// ResetPassword sets a new password using the one-time code the provider emailed
+	// via SendPasswordReset. No session required — the code proves ownership.
+	ResetPassword(ctx context.Context, userID, code, newPassword string) error
 }
 
 // LoginOTPHandle is opaque provider state for an in-flight passwordless login.
