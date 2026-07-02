@@ -245,6 +245,32 @@ export async function verifyEmailOtp(
   return postJSON("/otp/email/verify", { verificationId, code });
 }
 
+/**
+ * Send an SMS verification code to the signed-in user's phone on file. Requires an
+ * active session (the backend reads the user from it).
+ */
+export async function startMobileVerification(): Promise<{ resendIn: number; debugCode?: string }> {
+  if (USE_MOCK) {
+    await sleep(500);
+    return { resendIn: 30, debugCode: "123456" };
+  }
+  return postJSON("/otp/mobile/start", {});
+}
+
+/** Confirm the SMS code for the signed-in user's phone. */
+export async function verifyMobile(code: string): Promise<{ verified: boolean; next: string }> {
+  if (USE_MOCK) {
+    await sleep(600);
+    if (code !== "123456") {
+      throw new ApiError(400, "That code isn't right. Check it and try again.", "bad_otp");
+    }
+    const u = getMockUser();
+    if (u) setMockUser({ ...u, phoneVerified: true });
+    return { verified: true, next: "/" };
+  }
+  return postJSON("/otp/mobile/verify", { code });
+}
+
 /** True only in the standalone mock (no backend). */
 export const IS_MOCK = USE_MOCK;
 

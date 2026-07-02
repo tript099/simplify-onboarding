@@ -105,6 +105,7 @@ function CreateAccountForm({ productKey, redirectTo }: { productKey?: string; re
         state: {
           verificationId: res.verificationId,
           email: res.email,
+          phone: values.phone, // enables the optional mobile-verification step
           debugCode: res.debugCode,
           productKey,
           redirectTo, // carry the product so verify can land back there

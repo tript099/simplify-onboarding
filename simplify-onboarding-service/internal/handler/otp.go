@@ -79,20 +79,26 @@ func (h *Handler) StartMobileCode(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, resendResponse{ResendIn: h.cfg.ResendCooldownSeconds, DebugCode: h.debug(code)})
 }
 
-// VerifyMobileCode confirms a mobile code and flips the session's phone_verified flag.
+// VerifyMobileCode confirms the SMS code for the signed-in user's phone and flips
+// the session's phone_verified flag. The user is taken from the session (a user can
+// only verify their OWN phone), so the client sends just the code.
 func (h *Handler) VerifyMobileCode(w http.ResponseWriter, r *http.Request) {
-	var req verifyRequest
-	if err := httpx.DecodeJSON(r, &req); err != nil || req.VerificationID == "" {
-		bad(w, "verification id and code are required")
+	data, sid, err := h.sessions.FromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusUnauthorized, "unauthenticated", "sign in first")
 		return
 	}
-	err := h.users.VerifyPhone(r.Context(), req.VerificationID, req.Code)
-	if h.writeVerifyError(w, err) {
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.Code == "" {
+		bad(w, "code is required")
 		return
 	}
-	if _, sid, e := h.sessions.FromRequest(r); e == nil {
-		_ = h.sessions.Update(r.Context(), sid, func(d *session.Data) { d.PhoneVerified = true })
+	if err := h.users.VerifyPhone(r.Context(), data.UserID, req.Code); h.writeVerifyError(w, err) {
+		return
 	}
+	_ = h.sessions.Update(r.Context(), sid, func(d *session.Data) { d.PhoneVerified = true })
 	httpx.WriteJSON(w, http.StatusOK, verifyResponse{Verified: true, Next: "/"})
 }
 
