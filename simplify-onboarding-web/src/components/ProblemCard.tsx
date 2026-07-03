@@ -29,10 +29,14 @@ export function ProblemCard({ product, index = 0 }: { product: Product; index?: 
       />
       <div className="flex items-center justify-between">
         <span
-          className="grid h-11 w-11 place-items-center rounded-xl border border-border bg-secondary/50"
+          className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl border border-border bg-secondary/50"
           style={{ color: `hsl(${product.accent})` }}
         >
-          <Icon className="h-5 w-5" />
+          {product.logoUrl ? (
+            <img src={product.logoUrl} alt="" className="h-6 w-6 object-contain" loading="lazy" />
+          ) : (
+            <Icon className="h-5 w-5" />
+          )}
         </span>
         <ArrowUpRight className="h-5 w-5 text-muted-foreground/50 transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground" />
       </div>

@@ -60,6 +60,9 @@ type Config struct {
 	SimplifyCoreURL   string
 	SimplifyCoreToken string
 	SimplifyCoreStub  bool
+	// The Core master catalog app_id — drives the product registry (names, taglines,
+	// launch URLs, logos). Empty disables Core catalog (built-ins only).
+	SimplifyCoreCatalogAppID string
 
 	// MailForge — the shared email service (same one DocFlow uses). Accessed over
 	// HTTP with a project-scoped API key; sends demo/POC confirmation + team notify.
@@ -131,9 +134,10 @@ func Load() *Config {
 		ResendCooldownSeconds: envInt("RESEND_COOLDOWN_SECONDS", 30),
 		DebugReturnCode:       envBool("DEBUG_RETURN_CODE", false),
 
-		SimplifyCoreURL:   os.Getenv("SIMPLIFYCORE_BASE_URL"),
-		SimplifyCoreToken: os.Getenv("SIMPLIFYCORE_TOKEN"),
-		SimplifyCoreStub:  envBool("SIMPLIFYCORE_STUB", true),
+		SimplifyCoreURL:          os.Getenv("SIMPLIFYCORE_BASE_URL"),
+		SimplifyCoreToken:        os.Getenv("SIMPLIFYCORE_TOKEN"),
+		SimplifyCoreStub:         envBool("SIMPLIFYCORE_STUB", true),
+		SimplifyCoreCatalogAppID: os.Getenv("SIMPLIFYCORE_CATALOG_APP_ID"),
 
 		MailforgeURL:       os.Getenv("MAILFORGE_URL"),
 		MailforgeAPIKey:    os.Getenv("MAILFORGE_API_KEY"),

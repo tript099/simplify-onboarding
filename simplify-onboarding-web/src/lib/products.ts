@@ -30,6 +30,8 @@ export interface Product {
   tryAction: string;
   /** Where this product's app lives. Signed-in users "Open" it (shared SSO account). */
   launchUrl?: string;
+  /** Product logo from Simplify Core (shown instead of the local icon when present). */
+  logoUrl?: string;
 }
 
 export const DATA_RESIDENCY = ["ID", "SG", "IN", "AE"];
@@ -189,10 +191,20 @@ export function safeProductRedirect(raw: string | null | undefined): string | nu
 export function hydrateProduct(raw: Partial<Product> & { key: string }): Product {
   const local = BY_KEY.get(raw.key);
   if (local) {
-    // Local presentation wins for icon/accent/tryAction; backend text can refine the rest.
-    return { ...local, ...raw, icon: local.icon, accent: local.accent, tryAction: local.tryAction };
+    // Backend (Core) text wins for name/tagline/launchUrl/logoUrl; local presentation
+    // (icon/accent/tryAction) stays. Don't let an empty backend field blank a good local one.
+    return {
+      ...local,
+      ...raw,
+      icon: local.icon,
+      accent: local.accent,
+      tryAction: local.tryAction,
+      name: raw.name || local.name,
+      tagline: raw.tagline || local.tagline,
+      launchUrl: raw.launchUrl || local.launchUrl,
+    };
   }
-  // Unknown product (added server-side later) — safe defaults.
+  // Unknown product (added in Core) — safe defaults; render its Core logo if any.
   return {
     key: raw.key,
     intent: raw.intent ?? raw.name ?? raw.key,
@@ -205,5 +217,7 @@ export function hydrateProduct(raw: Partial<Product> & { key: string }): Product
     asksUserType: raw.asksUserType ?? true,
     enterpriseOnly: raw.enterpriseOnly ?? false,
     tryAction: raw.tryAction ?? "Try it now",
+    launchUrl: raw.launchUrl,
+    logoUrl: raw.logoUrl,
   };
 }

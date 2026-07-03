@@ -15,6 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/simplify/onboarding/internal/catalog"
+	"github.com/simplify/onboarding/internal/coreclient"
 	"github.com/simplify/onboarding/internal/config"
 	"github.com/simplify/onboarding/internal/entitlements"
 	"github.com/simplify/onboarding/internal/handler"
@@ -81,7 +82,10 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 		log.Warn("ONBOARDING_DATABASE_URL not set — user/demo/event persistence disabled")
 	}
 
-	cat := catalog.New(cfg.ProductRegistryFile, log)
+	// Product registry — built-ins overlaid with Simplify Core's catalog (names, taglines,
+	// launch URLs, logos) when SIMPLIFYCORE_BASE_URL + SIMPLIFYCORE_CATALOG_APP_ID are set.
+	coreCat := coreclient.New(cfg.SimplifyCoreURL, cfg.SimplifyCoreCatalogAppID, cfg.SimplifyCoreToken, log)
+	cat := catalog.New(cfg.ProductRegistryFile, coreCat, log)
 	keys := make([]string, 0, len(cat.List()))
 	for _, p := range cat.List() {
 		keys = append(keys, p.Key)
