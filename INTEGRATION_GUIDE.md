@@ -40,7 +40,7 @@ demo requests, analytics, audit).
 ```
                             ┌──────────────────────────────┐
                             │   Zitadel  (shared IdP)       │
-                            │   auth.simplifyaipro.com      │
+                            │   auth.simplifyai.id      │
                             │   - passwords, OTP, MFA       │
                             │   - Google / Microsoft IdPs   │
                             └───────────────▲──────────────┘
@@ -98,8 +98,7 @@ A product integrates by implementing **three things**:
 |---|---|---|
 | `GET /auth/validate` | **The integration endpoint.** Validate the session cookie; returns the universal identity. | cookie `session_id` |
 | `GET /auth/me` | Same identity in a "current user" shape (handy for a frontend proxy). | cookie `session_id` |
-| `GET /auth/logout` | Destroy the central session + clear the cookie (browser redirect). | cookie |
-| `POST /auth/logout` | Same, JSON response (for API clients). | cookie |
+| `GET /auth/logout` | Destroy the central session + clear the cookie (returns JSON). Your frontend then redirects to the portal. | cookie |
 
 You generally **do not** call the sign-up / sign-in endpoints — the **portal UI** owns
 those. Your product only ever *validates* and *logs out*.
@@ -110,7 +109,7 @@ those. Your product only ever *validates* and *logs out*.
 
 ```http
 GET /auth/validate HTTP/1.1
-Host: onboarding:8090
+Host: onboarding.simplifyai.id
 Cookie: session_id=<value>
 ```
 
@@ -221,11 +220,20 @@ Because the cookie is shared, clearing it logs the user out of **every** product
 
 The browser must send the **same** `session_id` cookie to both the portal and your product.
 
-- **Production:** set `COOKIE_DOMAIN=.simplifyaipro.com` on the onboarding service, and
-  host your product on a subdomain (e.g. `legal.simplifyaipro.com`). The cookie is then
+- **Production:** set `COOKIE_DOMAIN=.simplifyai.id` on the onboarding service, and
+  host your product on a subdomain (e.g. `legal.simplifyai.id`). The cookie is then
   sent to all subdomains.
 - **Local dev:** the cookie is host-only for `localhost` and is shared across ports
   (`localhost:3100` portal, `localhost:3000` product). Nothing to configure.
+
+> **⚠️ Both must share a parent domain.** The browser never sends a cookie across
+> different domains. SSO works only when the portal and every product sit under the **same
+> registrable domain** (`*.simplifyai.id`), and `COOKIE_DOMAIN=.simplifyai.id` is set on the
+> onboarding service. If `COOKIE_DOMAIN` is **unset**, the cookie is host-only to the portal
+> host and reaches **no** product. A product on a different domain — or `localhost` vs a real
+> domain — cannot receive the session; there is no server-side workaround (it's a browser
+> boundary). To test a `localhost` product against a deployed portal, run it on a
+> `*.simplifyai.id` host (hosts-file) or copy the cookie manually.
 
 ### Step 2 — Redirect unauthenticated users to the portal (frontend)
 
@@ -233,7 +241,7 @@ When your app loads and has no valid session, send the browser to the portal, ca
 `redirect` back to where the user was:
 
 ```ts
-const ONBOARDING_URL = import.meta.env.VITE_ONBOARDING_URL; // e.g. https://app.simplifyaipro.com
+const ONBOARDING_URL = import.meta.env.VITE_ONBOARDING_URL; // e.g. https://app.simplifyai.id
 function redirectToLogin() {
   const ret = encodeURIComponent(window.location.href);
   window.location.replace(`${ONBOARDING_URL}/auth?mode=signin&redirect=${ret}`);
@@ -286,14 +294,16 @@ is already set, the user lands signed in. No extra work on your side.
 
 ## 6. Reference implementation — how DocFlow does it
 
-DocFlow is the canonical integration. Use it as a copy-paste template.
+DocFlow is the canonical **backend** integration — the validate-and-map in `docflow-auth`
++ `docflow-bff` below is live and is the part to copy.
 
-**Frontend (`docflow-frontend`)**
-- `ProtectedRoute.tsx` → unauthenticated users are redirected to the portal
-  (`redirectToOnboardingLogin()` in `services/zitadelAuth.ts`).
-- The local `/auth` route renders a redirect-to-portal component, not a login form.
-- Sign-out and session-timeout both route to the portal (`onboardingLoginUrl()`).
-- `VITE_ONBOARDING_URL` env points at the portal.
+**Frontend (product SPA) — the pattern to implement (see Step 2):**
+- On an unauthenticated load, redirect to `${VITE_ONBOARDING_URL}/auth?mode=signin&redirect=<current-url>`
+  instead of rendering a local login form; route sign-out + session-timeout to the portal too.
+- Point a `VITE_ONBOARDING_URL` (or equivalent) env at the portal.
+> Note: DocFlow's frontend redirect wiring has been toggled on/off during development, so
+> don't rely on specific DocFlow frontend function names — follow Step 2 as the source of
+> truth. The **backend** contract below is the stable, always-current reference.
 
 **Backend — validation lives in `docflow-auth` (reused by the BFF):**
 - `internal/handler/handler.go`
@@ -303,17 +313,25 @@ DocFlow is the canonical integration. Use it as a copy-paste template.
     (this is what keeps `app_users` populated with the full profile, not just the id).
   - `/validate` (`resolveCentralSession`) and `/me` (`meFromCentral`) both fall back to
     onboarding when the cookie isn't a docflow-native session.
-- `internal/config/config.go` → `ONBOARDING_VALIDATE_URL` (default
-  `http://onboarding:8090/auth/validate`).
+- `internal/config/config.go` reads `ONBOARDING_VALIDATE_URL` (no baked default — it's
+  supplied by env; the root `docker-compose.yml` defaults it to
+  `http://host.docker.internal:8090/auth/validate` for local same-host).
 
 **BFF (`docflow-bff`)**
 - `internal/middleware/auth.go` → `callValidate()` **forwards the `session_id` cookie** to
-  docflow-auth so cookie-only requests reach the onboarding fallback.
+  docflow-auth so cookie-only requests reach the onboarding fallback (validate httpClient
+  timeout is 12s — the central validate fans out to onboarding + a DB user lookup).
 
 **Compose / networking**
-- The onboarding service joins DocFlow's network with the alias `onboarding`, so
-  `http://onboarding:8090/auth/validate` is reachable.
+- The onboarding service runs as its **own standalone stack on its own network** — it is
+  **never** joined to a product's Docker network. Products reach it purely over HTTP via
+  `ONBOARDING_VALIDATE_URL`, so the same code path works in prod and locally.
 - `ONBOARDING_VALIDATE_URL` is set on `docflow-auth` in the root `docker-compose.yml`.
+  Its value depends on where onboarding runs:
+  - **Local (separate compose projects, same host):** `http://host.docker.internal:8090/auth/validate`
+    — the onboarding stack publishes `:8090` on the host; the product reaches it via the host gateway.
+  - **Production:** the onboarding service's real URL, e.g. `https://onboarding.simplifyai.id/validate`
+    or an internal service-discovery address.
 
 > A new product can either replicate this in its own auth service (like docflow-auth) or
 > do the validate-and-map directly in its gateway/BFF. Both are fine — the contract is
@@ -333,7 +351,7 @@ DocFlow is the canonical integration. Use it as a copy-paste template.
 | `ZITADEL_ISSUER` / `ZITADEL_INTERNAL_URL` / `ZITADEL_CLIENT_ID` / `ZITADEL_SERVICE_PAT` / `ZITADEL_ORG_ID` | Zitadel connection. |
 | `IDP_GOOGLE_ID`, `IDP_MICROSOFT_ID` | Federated SSO IdP ids. |
 | `SESSION_PERSIST=true` | Session lives until logout. |
-| `COOKIE_DOMAIN` | `.simplifyaipro.com` in prod (share across subdomains); empty in dev. |
+| `COOKIE_DOMAIN` | `.simplifyai.id` in prod (share across subdomains); empty in dev. |
 | `COOKIE_SECURE` | `true` in prod (HTTPS). |
 | `FRONTEND_URL` | The portal SPA base (used for SSO callbacks + redirects). |
 | `CORS_ALLOWED_ORIGINS` | Portal + product origins allowed to call it / be redirect targets. |
@@ -342,8 +360,8 @@ DocFlow is the canonical integration. Use it as a copy-paste template.
 
 | Env | Meaning |
 |---|---|
-| `ONBOARDING_VALIDATE_URL` | `http(s)://<onboarding-host>/auth/validate` — backend validation. |
-| `VITE_ONBOARDING_URL` (or equiv) | Portal base — frontend redirects + logout. |
+| `ONBOARDING_VALIDATE_URL` | Backend validation URL. **Prod:** onboarding's real URL, e.g. `https://onboarding.simplifyai.id/validate` (or internal service-discovery). **Local same-host:** `http://host.docker.internal:8090/auth/validate` — onboarding runs on its own network, reached by URL, never a shared docker network. |
+| `VITE_ONBOARDING_URL` (or equiv) | Portal base — frontend redirects + logout, e.g. `https://onboarding.simplifyai.id`. |
 
 ---
 
@@ -386,13 +404,15 @@ GET  /auth/me                          # current user (portal/proxy)
 POST /auth/register                    # portal sign-up
 POST /auth/login                       # portal password sign-in
 POST /auth/demo                        # "Try it now" shared demo account
-GET  /auth/logout    POST /auth/logout # destroy central session
+GET  /auth/logout                      # destroy central session (JSON), clears cookie
 GET  /auth/clients                     # product registry (portal)
 GET  /auth/sso/{provider}              # start Google/Microsoft SSO
 GET  /auth/sso/callback/{provider}     # SSO return (Zitadel IDP intent)
 POST /auth/otp/email/start | verify    # email verification
-POST /auth/otp/mobile/start | verify   # mobile verification
-POST /auth/login/otp/start | verify    # passwordless sign-in
+POST /auth/otp/mobile/start | verify   # mobile verification (SMS)
+POST /auth/login/otp/start | verify    # passwordless sign-in (email or mobile)
+POST /auth/password/forgot             # email a password-reset link
+POST /auth/password/reset              # complete reset via the emailed code
 POST /onb/session, /onb/event          # value-first funnel analytics
 GET  /onb/state, /onb/entitlements
 POST /onb/demo                         # demo / POC / contact requests
