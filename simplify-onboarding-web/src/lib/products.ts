@@ -189,34 +189,23 @@ export function safeProductRedirect(raw: string | null | undefined): string | nu
  * full Product by overlaying local presentation, keyed by `key`.
  */
 export function hydrateProduct(raw: Partial<Product> & { key: string }): Product {
+  // Content (name/intent/tagline/launchUrl/logo) is used EXACTLY as the backend/Core
+  // sends it — nothing is fabricated here. Only presentation (icon/accent/tryAction) is
+  // resolved locally: a matching local product supplies a nicer icon, else a neutral
+  // default. The Core logo (logoUrl) takes precedence in the card when present.
   const local = BY_KEY.get(raw.key);
-  if (local) {
-    // Backend (Core) text wins for name/tagline/launchUrl/logoUrl; local presentation
-    // (icon/accent/tryAction) stays. Don't let an empty backend field blank a good local one.
-    return {
-      ...local,
-      ...raw,
-      icon: local.icon,
-      accent: local.accent,
-      tryAction: local.tryAction,
-      name: raw.name || local.name,
-      tagline: raw.tagline || local.tagline,
-      launchUrl: raw.launchUrl || local.launchUrl,
-    };
-  }
-  // Unknown product (added in Core) — safe defaults; render its Core logo if any.
   return {
     key: raw.key,
-    intent: raw.intent ?? raw.name ?? raw.key,
+    intent: raw.intent ?? raw.name ?? "",
     name: raw.name ?? raw.key,
     tagline: raw.tagline ?? "",
     trialScope: raw.trialScope ?? "",
-    icon: FileStack,
-    accent: "217 91% 60%",
+    icon: local?.icon ?? FileStack,
+    accent: local?.accent ?? "217 91% 60%",
     allowedUserTypes: raw.allowedUserTypes ?? ["self_serve"],
     asksUserType: raw.asksUserType ?? true,
     enterpriseOnly: raw.enterpriseOnly ?? false,
-    tryAction: raw.tryAction ?? "Try it now",
+    tryAction: local?.tryAction ?? "Try it now",
     launchUrl: raw.launchUrl,
     logoUrl: raw.logoUrl,
   };

@@ -45,11 +45,11 @@ export function ProblemCard({ product, index = 0 }: { product: Product; index?: 
         <h3 className="font-display text-lg font-semibold tracking-tight text-foreground">
           {product.intent}
         </h3>
-        <p className="mt-1 text-sm text-muted-foreground">{product.tagline}</p>
+        {product.tagline && <p className="mt-1 text-sm text-muted-foreground">{product.tagline}</p>}
       </div>
 
       <span className="relative mt-auto text-xs font-medium text-muted-foreground/70">
-        {launch ? `Open ${product.name} →` : product.name}
+        {launch ? `Open ${product.name} →` : " "}
       </span>
     </>
   );

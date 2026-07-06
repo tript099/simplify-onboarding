@@ -31,21 +31,10 @@ type Product struct {
 	LogoURL   string `json:"logoUrl,omitempty"`
 }
 
-// coreAlias maps a Core catalog slug to our local product key so Core data overlays the
-// right built-in (preserving its icon/accent/intent on the frontend). Slugs not listed
-// are added as new products under a normalized key.
-var coreAlias = map[string]string{
-	"simplify-docflow": "docflow",
-	"insights":         "insights",
-	"talent":           "talent",
-	"hiring-platform":  "hiring",
-	"simplify-hiring":  "hiring",
-	"Simplify_HR":      "hr",
-}
-
-// Catalog holds the registry and answers lookups. When a Core client is configured it
-// overlays Core's names/taglines/launch URLs/logos (refreshed in the background); Core
-// being empty or unreachable always falls back to the built-in list.
+// Catalog holds the registry and answers lookups. When a Core client is configured the
+// product list is Core's catalog VERBATIM (name/tagline/launch URL/logo — nothing is
+// fabricated locally); refreshed in the background. Built-ins are only an emergency
+// fallback for when Core has never responded (so the home page is never blank).
 type Catalog struct {
 	mu       sync.RWMutex
 	products []Product
@@ -137,8 +126,9 @@ func (c *Catalog) loop() {
 	}
 }
 
-// refresh pulls Core's catalog and overlays it on the built-ins. On any error it leaves
-// the current snapshot untouched — the home page never breaks because Core is down.
+// refresh pulls Core's catalog and makes it THE product list (Core data only). On any
+// error, or if Core returns nothing, it leaves the current snapshot untouched — the home
+// page never breaks because Core is down.
 func (c *Catalog) refresh() {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
@@ -147,58 +137,35 @@ func (c *Catalog) refresh() {
 		c.log.Warn("core catalog fetch failed — keeping current product list", zap.Error(err))
 		return
 	}
-	merged := overlayCore(c.builtins, coreProducts)
-	c.set(merged)
-	c.log.Info("product catalog refreshed from Simplify Core", zap.Int("products", len(merged)))
+	list := fromCore(coreProducts)
+	if len(list) == 0 {
+		c.log.Warn("core catalog returned no products — keeping current product list")
+		return
+	}
+	c.set(list)
+	c.log.Info("product catalog refreshed from Simplify Core", zap.Int("products", len(list)))
 }
 
-// overlayCore returns the built-in list with Core's name/tagline/launchURL/logo overlaid
-// (matched via coreAlias), plus any Core-only products appended. Empty Core fields never
-// overwrite good built-in text.
-func overlayCore(builtins []Product, core []coreclient.Product) []Product {
-	out := make([]Product, len(builtins))
-	copy(out, builtins)
-	idx := make(map[string]int, len(out))
-	for i, p := range out {
-		idx[p.Key] = i
-	}
+// fromCore maps Core's published products 1:1 into the registry using ONLY Core-provided
+// text — no local headings/taglines are invented. Empty Core fields stay empty (they'll
+// fill in as Core is updated). Icon/accent are presentation and resolved on the frontend.
+func fromCore(core []coreclient.Product) []Product {
+	out := make([]Product, 0, len(core))
 	for _, cp := range core {
 		if cp.Status != "" && cp.Status != "PUBLISHED" {
 			continue
 		}
-		key := coreAlias[cp.Slug]
-		if key == "" {
-			key = normalizeKey(cp.Slug)
-		}
-		tagline := firstNonEmpty(cp.Tagline, cp.Description)
-		if i, ok := idx[key]; ok {
-			if cp.Name != "" {
-				out[i].Name = cp.Name // Core name, as-is
-			}
-			if tagline != "" {
-				out[i].Tagline = tagline
-			}
-			if cp.WebsiteURL != "" {
-				out[i].LaunchURL = cp.WebsiteURL
-			}
-			if cp.LogoURL != "" {
-				out[i].LogoURL = cp.LogoURL
-			}
-			continue
-		}
-		// Core-only product — append with safe defaults.
 		out = append(out, Product{
-			Key:           key,
-			Name:          firstNonEmpty(cp.Name, cp.Slug),
-			Intent:        firstNonEmpty(tagline, cp.Name, cp.Slug),
-			Tagline:       tagline,
+			Key:           normalizeKey(cp.Slug),
+			Name:          cp.Name,
+			Intent:        cp.Name,                                  // card heading = the Core name
+			Tagline:       firstNonEmpty(cp.Tagline, cp.Description), // Core text only (may be empty)
 			LaunchURL:     cp.WebsiteURL,
 			LogoURL:       cp.LogoURL,
 			AllowedTypes:  []string{"enterprise", "self_serve"},
 			AsksUserType:  true,
 			DataResidency: residency,
 		})
-		idx[key] = len(out) - 1
 	}
 	return out
 }
