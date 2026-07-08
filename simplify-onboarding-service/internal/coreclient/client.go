@@ -17,6 +17,7 @@ import (
 
 // Product is the subset of a Core catalog product the onboarding registry uses.
 type Product struct {
+	ID          string `json:"id"` // Core product UUID — used to deep-link to the purchase page
 	Slug        string `json:"slug"`
 	Name        string `json:"name"`
 	Description string `json:"description"`

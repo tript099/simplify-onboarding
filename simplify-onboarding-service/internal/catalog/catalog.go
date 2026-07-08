@@ -29,7 +29,13 @@ type Product struct {
 	// From Simplify Core (overlaid at runtime): the product's launch URL + logo.
 	LaunchURL string `json:"launchUrl,omitempty"`
 	LogoURL   string `json:"logoUrl,omitempty"`
+	CoreID    string `json:"coreId,omitempty"` // Core product UUID → deep-link to the purchase page
+	Slug      string `json:"slug,omitempty"`   // raw Core slug (matches Account-API product_slug)
 }
+
+// NormalizeKey turns a Core slug into our local product key (strips the "simplify-"
+// prefix, lowercases). Exported so the subscriptions handler keys the same way.
+func NormalizeKey(slug string) string { return normalizeKey(slug) }
 
 // Catalog holds the registry and answers lookups. When a Core client is configured the
 // product list is Core's catalog VERBATIM (name/tagline/launch URL/logo — nothing is
@@ -157,6 +163,8 @@ func fromCore(core []coreclient.Product) []Product {
 		}
 		out = append(out, Product{
 			Key:           normalizeKey(cp.Slug),
+			Slug:          cp.Slug,
+			CoreID:        cp.ID,
 			Name:          cp.Name,
 			Intent:        cp.Name,                                  // card heading = the Core name
 			Tagline:       firstNonEmpty(cp.Tagline, cp.Description), // Core text only (may be empty)

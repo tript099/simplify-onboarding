@@ -32,6 +32,22 @@ export interface Product {
   launchUrl?: string;
   /** Product logo from Simplify Core (shown instead of the local icon when present). */
   logoUrl?: string;
+  /** Core product UUID → deep-link to the purchase page. */
+  coreId?: string;
+  /** The signed-in user's subscription for this product (merged in from /auth/subscriptions). */
+  subscription?: ProductSub;
+}
+
+/** A user's subscription to one product (from Core's Account API, via /auth/subscriptions). */
+export interface ProductSub {
+  planCode: string;
+  planName: string;
+  state: string; // ACTIVE | TRIALING | PAST_DUE | CANCELED | …
+  billingPeriod?: string;
+  priceCents?: number;
+  currency?: string;
+  currentPeriodEnd?: string;
+  cancelAtPeriodEnd?: boolean;
 }
 
 export const DATA_RESIDENCY = ["ID", "SG", "IN", "AE"];
@@ -208,5 +224,6 @@ export function hydrateProduct(raw: Partial<Product> & { key: string }): Product
     tryAction: local?.tryAction ?? "Try it now",
     launchUrl: raw.launchUrl,
     logoUrl: raw.logoUrl,
+    coreId: raw.coreId,
   };
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 
+	"github.com/simplify/onboarding/internal/account"
 	"github.com/simplify/onboarding/internal/catalog"
 	"github.com/simplify/onboarding/internal/coreclient"
 	"github.com/simplify/onboarding/internal/config"
@@ -86,6 +87,9 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 	// launch URLs, logos) when SIMPLIFYCORE_BASE_URL + SIMPLIFYCORE_CATALOG_APP_ID are set.
 	coreCat := coreclient.New(cfg.SimplifyCoreURL, cfg.SimplifyCoreCatalogAppID, cfg.SimplifyCoreToken, log)
 	cat := catalog.New(cfg.ProductRegistryFile, coreCat, log)
+
+	// Core Account API — the signed-in user's per-product subscriptions (by email).
+	acct := account.New(cfg.SimplifyCoreURL, cfg.AccountAPIKey, cfg.AccountAPISecret, log)
 	keys := make([]string, 0, len(cat.List()))
 	for _, p := range cat.List() {
 		keys = append(keys, p.Key)
@@ -131,6 +135,7 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 		Entitlements: ent,
 		Notify:       notifier,
 		Scheduler:    sched,
+		Account:      acct,
 	})
 
 	r := chi.NewRouter()
@@ -155,11 +160,15 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 	// Session validation for products / Kong (docflow-auth `/validate` contract).
 	r.Get("/validate", h.Validate)
 
+	// Zitadel HTTP SMS provider webhook → forward OTP to your SMS gateway.
+	r.Post("/sms/zitadel", h.ZitadelSMS)
+
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", h.Register)
 		r.Post("/login", h.SignIn)
 		r.Post("/demo", h.DemoLogin) // "Try it now" — shared demo account, no signup
 		r.Get("/me", h.Me)
+		r.Get("/subscriptions", h.Subscriptions) // signed-in user's per-product plan (Core Account API)
 		r.Get("/logout", h.Logout)
 		r.Post("/password/forgot", h.ForgotPassword) // email a reset link
 		r.Post("/password/reset", h.ResetPassword)   // complete reset via emailed code

@@ -19,7 +19,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field } from "@/components/Field";
 import { PhoneField } from "@/components/PhoneField";
 import { Select } from "@/components/ui/select";
-import { submitDemoRequest, type DemoType } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { submitDemoRequest, fetchProducts, type DemoType } from "@/lib/api";
 import { isWorkEmail } from "@/lib/validation";
 import { DATA_RESIDENCY, getProduct, type Product } from "@/lib/products";
 import { cn } from "@/lib/utils";
@@ -105,7 +106,8 @@ export default function BookDemoPage() {
   const [params] = useSearchParams();
   const type = ((params.get("type") as DemoType) || "demo") as DemoType;
   const productKey = params.get("product") ?? undefined;
-  const product = getProduct(productKey);
+  const { data: products } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
+  const product = products?.find((p) => p.key === productKey) ?? getProduct(productKey);
   const meta = TITLES[type] ?? TITLES.demo;
 
   // Contact is a single step; demo/poc are three.

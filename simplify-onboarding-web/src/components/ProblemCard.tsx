@@ -8,12 +8,19 @@ import { cn } from "@/lib/utils";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
+const CORE_CLIENT_URL = import.meta.env.VITE_CORE_CLIENT_URL ?? "https://core-client-dev.simplifyaipro.com";
+
 export function ProblemCard({ product, index = 0 }: { product: Product; index?: number }) {
   const Icon = product.icon;
   const { user } = useAuth();
   // Signed in + the product has an app → open it directly (shared SSO account).
   // Otherwise follow the value-first landing page.
   const launch = user && product.launchUrl ? product.launchUrl : null;
+
+  const sub = product.subscription;
+  const isSubscribed = !!sub && (sub.state === "ACTIVE" || sub.state === "TRIALING");
+  // Purchase page on the Core customer portal (deep-linked by the Core product id).
+  const purchaseUrl = product.coreId ? `${CORE_CLIENT_URL.replace(/\/$/, "")}/products/${product.coreId}` : null;
 
   const cardClass = cn(
     "group relative flex h-full flex-col gap-4 overflow-hidden rounded-2xl border border-border bg-card/60 p-6 transition-all duration-300",
@@ -48,9 +55,29 @@ export function ProblemCard({ product, index = 0 }: { product: Product; index?: 
         {product.tagline && <p className="mt-1 text-sm text-muted-foreground">{product.tagline}</p>}
       </div>
 
-      <span className="relative mt-auto text-xs font-medium text-muted-foreground/70">
-        {launch ? `Open ${product.name} →` : " "}
-      </span>
+      <div className="relative mt-auto flex items-center justify-between gap-2 text-xs font-medium">
+        {isSubscribed ? (
+          <span className="inline-flex items-center gap-1.5 text-success">
+            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            {sub!.planName}
+            {sub!.state === "TRIALING" ? " · trial" : ""}
+          </span>
+        ) : user && purchaseUrl ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              window.open(purchaseUrl, "_blank", "noopener,noreferrer");
+            }}
+            className="inline-flex w-fit items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary/20"
+          >
+            Purchase &rarr;
+          </button>
+        ) : (
+          <span className="text-muted-foreground/70">{launch ? `Open ${product.name} →` : " "}</span>
+        )}
+      </div>
     </>
   );
 

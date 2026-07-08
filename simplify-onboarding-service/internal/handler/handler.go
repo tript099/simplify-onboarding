@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/simplify/onboarding/internal/account"
 	"github.com/simplify/onboarding/internal/catalog"
 	"github.com/simplify/onboarding/internal/config"
 	"github.com/simplify/onboarding/internal/entitlements"
@@ -34,6 +35,7 @@ type Handler struct {
 	entitlements *entitlements.Client
 	notify       *notify.Service   // demo/POC emails via MailForge (nil when unconfigured)
 	scheduler    *scheduler.Client // meeting scheduler (nil/disabled when unconfigured)
+	account      *account.Client   // Core Account API — per-product subscriptions (nil/disabled)
 	client       *http.Client      // outbound calls (Zitadel IDP intents for SSO)
 }
 
@@ -50,6 +52,7 @@ type Deps struct {
 	Entitlements *entitlements.Client
 	Notify       *notify.Service
 	Scheduler    *scheduler.Client
+	Account      *account.Client
 }
 
 // New builds a Handler.
@@ -66,6 +69,7 @@ func New(d Deps) *Handler {
 		entitlements: d.Entitlements,
 		notify:       d.Notify,
 		scheduler:    d.Scheduler,
+		account:      d.Account,
 		client:       &http.Client{Timeout: 30 * time.Second},
 	}
 }

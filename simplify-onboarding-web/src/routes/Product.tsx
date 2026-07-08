@@ -35,8 +35,9 @@ export default function ProductPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const refreshAuth = useRefreshAuth();
-  const { isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
-  const product = getProduct(key);
+  const { data: products, isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
+  // Resolve from the live (Core-driven) catalog; fall back to the local list for safety.
+  const product = products?.find((p) => p.key === key) ?? getProduct(key);
   const [choice, setChoice] = useState<MotionChoice>("self_serve");
   const [demoing, setDemoing] = useState(false);
 

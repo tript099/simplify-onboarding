@@ -56,6 +56,7 @@ server {
     location /auth/      { proxy_pass ${ONBOARDING_API_URL}; }
     location /onb/       { proxy_pass ${ONBOARDING_API_URL}; }
     location = /validate { proxy_pass ${ONBOARDING_API_URL}; }
+    location /sms/       { proxy_pass ${ONBOARDING_API_URL}; } # Zitadel HTTP SMS webhook
 
     # Bare /auth is the SPA sign-in page; everything else is client-side routing.
     location = /auth { try_files /index.html =404; }

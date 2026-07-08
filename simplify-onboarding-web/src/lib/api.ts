@@ -106,6 +106,19 @@ export async function resetPassword(userID: string, code: string, newPassword: s
   await postJSON<{ ok: boolean }>("/password/reset", { userID, code, newPassword });
 }
 
+/** The signed-in user's per-product subscriptions, keyed by product key (empty if logged out). */
+export async function fetchSubscriptions(): Promise<Record<string, import("./products").ProductSub>> {
+  if (USE_MOCK) return {};
+  try {
+    const res = await fetch(`${BASE}/subscriptions`, { credentials: "include" });
+    if (!res.ok) return {};
+    const data = (await res.json()) as { subscriptions?: Record<string, import("./products").ProductSub> };
+    return data.subscriptions ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /** Product registry — drives the BrandPanel, homepage cards and product pages. */
 export async function fetchProducts(): Promise<Product[]> {
   if (USE_MOCK) {

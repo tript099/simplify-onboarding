@@ -7,7 +7,7 @@ import { SiteFooter } from "@/components/Footer";
 import { ProblemCard } from "@/components/ProblemCard";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchProducts } from "@/lib/api";
+import { fetchProducts, fetchSubscriptions } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 
 const ease = [0.22, 1, 0.36, 1] as const;
@@ -32,6 +32,13 @@ function CardsSkeleton() {
 export default function HomePage() {
   const { data: products, isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
   const { user } = useAuth();
+  // The signed-in user's per-product subscriptions (only when logged in).
+  const { data: subs } = useQuery({
+    queryKey: ["subscriptions", user?.id ?? null],
+    queryFn: fetchSubscriptions,
+    enabled: !!user,
+  });
+  const cards = products?.map((p) => (subs?.[p.key] ? { ...p, subscription: subs[p.key] } : p));
   const greetingName = user?.firstName || user?.displayName || user?.email?.split("@")[0];
 
   return (
@@ -104,7 +111,7 @@ export default function HomePage() {
 
         <section className="container pb-24">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {isLoading ? <CardsSkeleton /> : products?.map((p, i) => <ProblemCard key={p.key} product={p} index={i} />)}
+            {isLoading ? <CardsSkeleton /> : cards?.map((p, i) => <ProblemCard key={p.key} product={p} index={i} />)}
           </div>
         </section>
       </main>

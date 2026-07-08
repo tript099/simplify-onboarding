@@ -64,6 +64,27 @@ type Config struct {
 	// launch URLs, logos). Empty disables Core catalog (built-ins only).
 	SimplifyCoreCatalogAppID string
 
+	// Core Account API (HMAC) — the signed-in user's per-product subscriptions (by email).
+	AccountAPIKey    string // acct_…
+	AccountAPISecret string // acsk_…
+
+	// SMS webhook: Zitadel's HTTP SMS provider POSTs OTPs to us; we forward them either
+	// via a generic HTTP gateway (SMS_PROVIDER_*) or AWS SNS (SMS_PROVIDER=sns).
+	SMSWebhookSigningKey string // from Zitadel AddSMSProviderHTTP response; verifies ZITADEL-Signature
+	SMSWebhookVerify     bool
+	SMSProvider          string // "http" (default) | "sns"
+	// Generic HTTP gateway
+	SMSProviderURL          string // send endpoint (empty → log-only, for testing)
+	SMSProviderMethod       string
+	SMSProviderContentType  string
+	SMSProviderAuthHeader   string // raw "Header-Name: value", e.g. "Authorization: Bearer xxx"
+	SMSProviderBodyTemplate string // body with {{phone}} and {{text}} placeholders
+	// AWS SNS (transport only — Zitadel still generates/verifies the OTP). Credentials come
+	// from the standard AWS env (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) or an IAM role.
+	SMSSNSRegion   string // e.g. ap-southeast-1 (must support SMS); empty → log-only
+	SMSSNSSenderID string // optional alphanumeric sender id (where the country allows it)
+	SMSSNSType     string // Transactional (default, for OTP) | Promotional
+
 	// MailForge — the shared email service (same one DocFlow uses). Accessed over
 	// HTTP with a project-scoped API key; sends demo/POC confirmation + team notify.
 	MailforgeURL       string
@@ -138,6 +159,20 @@ func Load() *Config {
 		SimplifyCoreToken:        os.Getenv("SIMPLIFYCORE_TOKEN"),
 		SimplifyCoreStub:         envBool("SIMPLIFYCORE_STUB", true),
 		SimplifyCoreCatalogAppID: os.Getenv("SIMPLIFYCORE_CATALOG_APP_ID"),
+		AccountAPIKey:            os.Getenv("ACCOUNT_API_KEY"),
+		AccountAPISecret:         os.Getenv("ACCOUNT_API_SECRET"),
+
+		SMSWebhookSigningKey:    os.Getenv("SMS_WEBHOOK_SIGNING_KEY"),
+		SMSWebhookVerify:        envBool("SMS_WEBHOOK_VERIFY", true),
+		SMSProvider:             envOr("SMS_PROVIDER", "http"),
+		SMSProviderURL:          os.Getenv("SMS_PROVIDER_URL"),
+		SMSProviderMethod:       envOr("SMS_PROVIDER_METHOD", "POST"),
+		SMSProviderContentType:  envOr("SMS_PROVIDER_CONTENT_TYPE", "application/json"),
+		SMSProviderAuthHeader:   os.Getenv("SMS_PROVIDER_AUTH_HEADER"),
+		SMSProviderBodyTemplate: envOr("SMS_PROVIDER_BODY_TEMPLATE", `{"to":"{{phone}}","message":"{{text}}"}`),
+		SMSSNSRegion:            envOr("SMS_SNS_REGION", os.Getenv("AWS_REGION")),
+		SMSSNSSenderID:          os.Getenv("SMS_SNS_SENDER_ID"),
+		SMSSNSType:              envOr("SMS_SNS_TYPE", "Transactional"),
 
 		MailforgeURL:       os.Getenv("MAILFORGE_URL"),
 		MailforgeAPIKey:    os.Getenv("MAILFORGE_API_KEY"),
