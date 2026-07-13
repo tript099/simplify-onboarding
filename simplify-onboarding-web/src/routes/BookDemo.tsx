@@ -106,6 +106,8 @@ export default function BookDemoPage() {
   const [params] = useSearchParams();
   const type = ((params.get("type") as DemoType) || "demo") as DemoType;
   const productKey = params.get("product") ?? undefined;
+  // "self_serve" (just for me) | "team" (whole team) — captured from the product page.
+  const usage = params.get("usage") ?? "";
   const { data: products } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
   const product = products?.find((p) => p.key === productKey) ?? getProduct(productKey);
   const meta = TITLES[type] ?? TITLES.demo;
@@ -160,7 +162,7 @@ export default function BookDemoPage() {
     setSubmitting(true);
     setServerError(null);
     try {
-      await submitDemoRequest({ type, product: productKey, ...form });
+      await submitDemoRequest({ type, product: productKey, usage, ...form });
       setDone(true);
     } catch {
       setServerError("Couldn't submit your request. Please try again.");

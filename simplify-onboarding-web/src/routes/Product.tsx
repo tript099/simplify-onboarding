@@ -65,18 +65,15 @@ export default function ProductPage() {
   }
 
   const Icon = product.icon;
-  const isTeam = !product.enterpriseOnly && choice === "team";
   // Signed in + the product has an app → "Open" it (shared SSO account).
   const canLaunch = !!user && !!product.launchUrl;
-  // "Try it now" (sandbox on sample data) is offered to EVERYONE — including
-  // enterprise. Seeing it work never requires a sales calendar; demo / POC stay
-  // available alongside, for proving on the buyer's own data.
+  // "Try it now" (sandbox on sample data) is offered to EVERYONE — including enterprise.
   const primaryCta = canLaunch ? `Open ${product.name} →` : "Try it now →";
-  // Sales-led options shown as separate actions (not the only path to value).
-  const showSalesActions = product.enterpriseOnly || isTeam;
 
+  // The "Just for me" / "Use for my whole team" pick is just a captured input — ALL three
+  // options (try, demo, poc) are always available; the choice rides along into the form + DB.
   const goDemo = (type: "demo" | "poc" | "contact") =>
-    navigate(`/demo?product=${product.key}&type=${type}`);
+    navigate(`/demo?product=${product.key}&type=${type}&usage=${choice}`);
 
   // "Try it now" — sign in as the shared demo account (no signup) and open the
   // product. Because it's a real SSO session, the same demo carries to every product.
@@ -215,24 +212,20 @@ export default function ProductPage() {
               </p>
             )}
 
-            {/* Sales-led paths live ALONGSIDE "Try it now", never gate first value. */}
-            {showSalesActions && (
-              <>
-                <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground/70">
-                  <span className="h-px flex-1 bg-border" />
-                  or prove it on your data
-                  <span className="h-px flex-1 bg-border" />
-                </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <Button variant="outline" onClick={() => goDemo("demo")}>
-                    Book a demo
-                  </Button>
-                  <Button variant="outline" onClick={() => goDemo("poc")}>
-                    Request a POC
-                  </Button>
-                </div>
-              </>
-            )}
+            {/* Sales-led paths always live ALONGSIDE "Try it now" — shown for both choices. */}
+            <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+              <span className="h-px flex-1 bg-border" />
+              or prove it on your data
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button variant="outline" onClick={() => goDemo("demo")}>
+                Book a demo
+              </Button>
+              <Button variant="outline" onClick={() => goDemo("poc")}>
+                Request a POC
+              </Button>
+            </div>
 
             <div className="mt-4 flex items-center justify-center gap-4 text-xs text-muted-foreground">
               <button

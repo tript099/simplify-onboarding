@@ -129,6 +129,7 @@ func (h *Handler) SubmitDemo(w http.ResponseWriter, r *http.Request) {
 		newID, err := h.db.InsertDemoRequest(r.Context(), store.DemoRequest{
 			Type:          reqType,
 			ProductKey:    str(req["product"]),
+			Usage:         str(req["usage"]),
 			FirstName:     str(req["firstName"]),
 			LastName:      str(req["lastName"]),
 			Email:         str(req["email"]),

@@ -12,6 +12,7 @@ type DemoRequest struct {
 	ID            string
 	Type          string
 	ProductKey    string
+	Usage         string // "self_serve" (just for me) | "team" (whole team) — captured input
 	FirstName     string
 	LastName      string
 	Email         string
@@ -40,12 +41,12 @@ func (s *Store) InsertDemoRequest(ctx context.Context, d DemoRequest) (string, e
 INSERT INTO demo_requests (
     type, product_key, first_name, last_name, email, phone, job_title, company,
     company_size, industry, country, use_case, timeline, budget, notes, message,
-    preferred_date, time_slot, timezone, consent, payload
+    preferred_date, time_slot, timezone, consent, payload, usage
 ) VALUES (
     $1, NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''),
     NULLIF($7,''), NULLIF($8,''), NULLIF($9,''), NULLIF($10,''), NULLIF($11,''),
     NULLIF($12,''), NULLIF($13,''), NULLIF($14,''), NULLIF($15,''), NULLIF($16,''),
-    NULLIF($17,''), NULLIF($18,''), NULLIF($19,''), $20, $21
+    NULLIF($17,''), NULLIF($18,''), NULLIF($19,''), $20, $21, NULLIF($22,'')
 )
 RETURNING id`
 	var id string
@@ -53,7 +54,7 @@ RETURNING id`
 		nz(d.Type, "demo"), d.ProductKey, d.FirstName, d.LastName, d.Email, d.Phone,
 		d.JobTitle, d.Company, d.CompanySize, d.Industry, d.Country, d.UseCase,
 		d.Timeline, d.Budget, d.Notes, d.Message, d.PreferredDate, d.TimeSlot,
-		d.Timezone, d.Consent, payload,
+		d.Timezone, d.Consent, payload, d.Usage,
 	).Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("insert demo request: %w", err)
