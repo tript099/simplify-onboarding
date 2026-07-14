@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/providers/ThemeProvider";
 
 export function LogoMark({ className }: { className?: string }) {
+  const { color } = useTheme();
   return (
     <img
-      src="/simplify-logo.png"
+      src={color === "red" ? "/simplify-logo-red.png" : "/simplify-logo.png"}
       alt="Simplify"
       className={cn("object-contain", className)}
       draggable={false}

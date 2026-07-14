@@ -1,13 +1,17 @@
 import { Link } from "react-router-dom";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ColorToggle } from "@/components/ColorToggle";
+import { LanguageSelect } from "@/components/LanguageSelect";
 import { AccountMenu } from "@/components/AccountMenu";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
+import { useI18n } from "@/i18n";
 
 export function SiteHeader() {
   const { user, isLoading } = useAuth();
+  const { t } = useI18n();
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur-xl">
@@ -16,6 +20,8 @@ export function SiteHeader() {
           <Logo size="sm" />
         </Link>
         <div className="flex items-center gap-2.5">
+          <LanguageSelect />
+          <ColorToggle />
           <ThemeToggle />
           {isLoading ? (
             <Skeleton className="h-9 w-28 rounded-full" />
@@ -24,10 +30,10 @@ export function SiteHeader() {
           ) : (
             <>
               <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-                <Link to="/auth?mode=signin">Sign in</Link>
+                <Link to="/auth?mode=signin">{t("header.signIn")}</Link>
               </Button>
               <Button asChild size="sm">
-                <Link to="/auth">Create account</Link>
+                <Link to="/auth">{t("header.createAccount")}</Link>
               </Button>
             </>
           )}

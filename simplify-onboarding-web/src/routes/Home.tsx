@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchProducts, fetchSubscriptions } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
+import { useI18n } from "@/i18n";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -30,6 +31,7 @@ function CardsSkeleton() {
 }
 
 export default function HomePage() {
+  const { t } = useI18n();
   const { data: products, isLoading } = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
   const { user } = useAuth();
   // The signed-in user's per-product subscriptions (only when logged in).
@@ -56,11 +58,14 @@ export default function HomePage() {
             <Badge variant={user ? "success" : "primary"} className="mb-6">
               {user ? (
                 <>
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Signed in{greetingName ? ` as ${greetingName}` : ""}
+                  <CheckCircle2 className="h-3.5 w-3.5" />{" "}
+                  {greetingName
+                    ? t("home.badge.signedInAs", { name: greetingName })
+                    : t("home.badge.signedIn")}
                 </>
               ) : (
                 <>
-                  <Sparkles className="h-3.5 w-3.5" /> One account · every product
+                  <Sparkles className="h-3.5 w-3.5" /> {t("home.badge.oneAccount")}
                 </>
               )}
             </Badge>
@@ -74,12 +79,14 @@ export default function HomePage() {
           >
             {user ? (
               <>
-                Welcome back{greetingName ? `, ${greetingName}` : ""}. What would you like to{" "}
+                {t("home.hero.welcomeBack")}
+                {greetingName ? `, ${greetingName}` : ""}. {t("home.hero.whatLikeTo")}{" "}
                 <span className="text-gradient">Simplify</span>?
               </>
             ) : (
               <>
-                What would you like to <span className="text-gradient">Simplify</span> today?
+                {t("home.hero.whatLikeTo")} <span className="text-gradient">Simplify</span>{" "}
+                {t("home.hero.today")}?
               </>
             )}
           </motion.h1>
@@ -90,8 +97,7 @@ export default function HomePage() {
             transition={{ duration: 0.6, ease, delay: 0.12 }}
             className="mx-auto mt-5 max-w-xl text-base text-muted-foreground sm:text-lg"
           >
-            Start with your problem — not a product. Try it on sample data first, no booking,
-            no card. Register only once you've seen it work.
+            {t("home.subtitle")}
           </motion.p>
 
           <motion.div
@@ -101,10 +107,10 @@ export default function HomePage() {
             className="mt-7 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground"
           >
             <span className="inline-flex items-center gap-1.5">
-              <Zap className="h-4 w-4 text-primary" /> See value in 2–5 minutes
+              <Zap className="h-4 w-4 text-primary" /> {t("home.trust.value")}
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="h-4 w-4 text-success" /> SOC 2 · ID · SG · IN · AE
+              <ShieldCheck className="h-4 w-4 text-success" /> {t("home.trust.security")}
             </span>
           </motion.div>
         </section>

@@ -182,7 +182,7 @@ export default function BookDemoPage() {
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-72"
           style={{
-            background: `radial-gradient(55% 60% at 20% 0%, ${accentOf(product)} 0%, transparent 70%)`,
+            background: `radial-gradient(55% 60% at 20% 0%, hsl(var(--primary)) 0%, transparent 70%)`,
             opacity: 0.12,
           }}
           aria-hidden
@@ -269,9 +269,9 @@ function ContextPanel({
   meta: { title: string; sub: string; eyebrow: string };
   product?: Product;
 }) {
-  const tuple = product ? product.accent : DEFAULT_ACCENT;
-  const accent = `hsl(${tuple})`;
-  const soft = `hsl(${tuple} / 0.12)`;
+  // Chrome accents follow the active theme (Blue / Red), not a per-product colour.
+  const accent = `hsl(var(--primary))`;
+  const soft = `hsl(var(--primary) / 0.12)`;
   const Icon = product?.icon;
   return (
     <motion.aside
@@ -606,13 +606,6 @@ function SuccessCard({ type, product, email }: { type: DemoType; product?: strin
       </div>
     </motion.div>
   );
-}
-
-const DEFAULT_ACCENT = "221 83% 53%";
-
-// Solid accent color for a product, or a sensible brand default (used for washes).
-function accentOf(product?: Product): string {
-  return `hsl(${product ? product.accent : DEFAULT_ACCENT})`;
 }
 
 type StepProps = {

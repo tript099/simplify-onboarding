@@ -5,17 +5,20 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ThemeProvider } from "./providers/ThemeProvider";
 import { QueryProvider } from "./providers/QueryProvider";
+import { LanguageProvider } from "./i18n";
 import "flag-icons/css/flag-icons.min.css";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <QueryProvider>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </QueryProvider>
+      <LanguageProvider>
+        <QueryProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </QueryProvider>
+      </LanguageProvider>
     </ThemeProvider>
   </StrictMode>,
 );

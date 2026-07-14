@@ -22,7 +22,6 @@ export interface Product {
   /** What the scoped free trial unlocks, end-to-end. */
   trialScope: string;
   icon: LucideIcon;
-  accent: string; // hsl triplet for per-product accent
   allowedUserTypes: UserType[];
   asksUserType: boolean;
   enterpriseOnly: boolean;
@@ -63,7 +62,6 @@ export const PRODUCTS: Product[] = [
     tagline: "Legal chatbot, AI Lawyer, document review",
     trialScope: "Legal chatbot, AI Lawyer, and document review",
     icon: Scale,
-    accent: "217 91% 60%",
     allowedUserTypes: ["enterprise", "self_serve"],
     asksUserType: true,
     enterpriseOnly: false,
@@ -76,7 +74,6 @@ export const PRODUCTS: Product[] = [
     tagline: "OCR, extraction and document workflows",
     trialScope: "OCR a single document; access to SimplifyDrive",
     icon: FileStack,
-    accent: "199 89% 55%",
     allowedUserTypes: ["enterprise", "self_serve"],
     asksUserType: true,
     enterpriseOnly: false,
@@ -90,7 +87,6 @@ export const PRODUCTS: Product[] = [
     tagline: "Ask business questions across your data",
     trialScope: "Access to data for 2 selected companies",
     icon: BarChart3,
-    accent: "152 58% 50%",
     allowedUserTypes: ["enterprise", "self_serve"],
     asksUserType: true,
     enterpriseOnly: false,
@@ -103,7 +99,6 @@ export const PRODUCTS: Product[] = [
     tagline: "JD creation, resume assessment, AI interviews",
     trialScope: "One full hiring cycle: JD → publish → assess → AI interview",
     icon: Users,
-    accent: "262 83% 66%",
     allowedUserTypes: ["enterprise", "vendor", "candidate"],
     asksUserType: false,
     enterpriseOnly: false,
@@ -116,7 +111,6 @@ export const PRODUCTS: Product[] = [
     tagline: "From a prompt to a working build",
     trialScope: "Create use cases and a PRD",
     icon: Code2,
-    accent: "221 83% 62%",
     allowedUserTypes: ["enterprise", "self_serve"],
     asksUserType: true,
     enterpriseOnly: false,
@@ -129,7 +123,6 @@ export const PRODUCTS: Product[] = [
     tagline: "Any-to-any legacy modernization AI",
     trialScope: "Sample legacy snippet assessment (scoped preview)",
     icon: RefreshCw,
-    accent: "24 95% 58%",
     allowedUserTypes: ["enterprise"],
     asksUserType: false,
     enterpriseOnly: true,
@@ -142,7 +135,6 @@ export const PRODUCTS: Product[] = [
     tagline: "Assessments, reports and learning paths",
     trialScope: "One assessment end-to-end, with report",
     icon: GraduationCap,
-    accent: "330 81% 62%",
     allowedUserTypes: ["enterprise", "self_serve"],
     asksUserType: true,
     enterpriseOnly: false,
@@ -155,7 +147,6 @@ export const PRODUCTS: Product[] = [
     tagline: "Credit analysis and risk scoring",
     trialScope: "Credit analysis of self or 1 company",
     icon: CreditCard,
-    accent: "43 96% 56%",
     allowedUserTypes: ["enterprise", "self_serve"],
     asksUserType: true,
     enterpriseOnly: false,
@@ -200,13 +191,13 @@ export function safeProductRedirect(raw: string | null | undefined): string | nu
 }
 
 /**
- * Backend `/auth/clients` returns product text but no `icon`/`accent` (those are
+ * Backend `/auth/clients` returns product text but no `icon` (those are
  * React components / presentation, not JSON). Hydrate a raw backend product into a
  * full Product by overlaying local presentation, keyed by `key`.
  */
 export function hydrateProduct(raw: Partial<Product> & { key: string }): Product {
   // Content (name/intent/tagline/launchUrl/logo) is used EXACTLY as the backend/Core
-  // sends it — nothing is fabricated here. Only presentation (icon/accent/tryAction) is
+  // sends it — nothing is fabricated here. Only presentation (icon/tryAction) is
   // resolved locally: a matching local product supplies a nicer icon, else a neutral
   // default. The Core logo (logoUrl) takes precedence in the card when present.
   const local = BY_KEY.get(raw.key);
@@ -217,7 +208,6 @@ export function hydrateProduct(raw: Partial<Product> & { key: string }): Product
     tagline: raw.tagline ?? "",
     trialScope: raw.trialScope ?? "",
     icon: local?.icon ?? FileStack,
-    accent: local?.accent ?? "217 91% 60%",
     allowedUserTypes: raw.allowedUserTypes ?? ["self_serve"],
     asksUserType: raw.asksUserType ?? true,
     enterpriseOnly: raw.enterpriseOnly ?? false,

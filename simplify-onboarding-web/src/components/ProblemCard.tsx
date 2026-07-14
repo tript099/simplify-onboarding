@@ -31,13 +31,13 @@ export function ProblemCard({ product, index = 0 }: { product: Product; index?: 
     <>
       <span
         className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-100"
-        style={{ background: `hsl(${product.accent} / 0.18)` }}
+        style={{ background: `hsl(var(--primary) / 0.18)` }}
         aria-hidden
       />
       <div className="flex items-center justify-between">
         <span
           className="grid h-11 w-11 place-items-center overflow-hidden rounded-xl border border-border bg-secondary/50"
-          style={{ color: `hsl(${product.accent})` }}
+          style={{ color: `hsl(var(--primary))` }}
         >
           {product.logoUrl ? (
             <img src={product.logoUrl} alt="" className="h-6 w-6 object-contain" loading="lazy" />

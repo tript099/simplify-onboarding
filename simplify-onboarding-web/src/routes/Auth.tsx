@@ -26,6 +26,7 @@ import { ApiError, register, signIn, startLoginOtp, verifyLoginOtp, forgotPasswo
 import { safeProductRedirect } from "@/lib/products";
 import { OtpInput } from "@/components/OtpInput";
 import { useRefreshAuth } from "@/hooks/useAuth";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /**
@@ -536,6 +537,7 @@ function ResetPasswordForm({ userID, code, onDone }: { userID: string; code: str
 }
 
 export default function AuthPage() {
+  const { t } = useI18n();
   const [params, setSearchParams] = useSearchParams();
   const productKey = params.get("client_id") ?? params.get("product") ?? undefined;
   const initialTab = params.get("mode") === "signin" ? "signin" : "create";
@@ -583,10 +585,10 @@ export default function AuthPage() {
             <Tabs defaultValue={initialTab}>
               <TabsList className="mb-7 w-full">
                 <TabsTrigger value="create" className="flex-1">
-                  Create account
+                  {t("header.createAccount")}
                 </TabsTrigger>
                 <TabsTrigger value="signin" className="flex-1">
-                  Sign in
+                  {t("header.signIn")}
                 </TabsTrigger>
               </TabsList>
 

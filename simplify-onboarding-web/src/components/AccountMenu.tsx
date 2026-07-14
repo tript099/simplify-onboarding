@@ -48,7 +48,7 @@ export function AccountMenu({ user }: { user: SessionUser }) {
             "flex items-center gap-2 rounded-full border border-border bg-secondary/40 py-1 pl-1 pr-2.5 transition-colors hover:bg-secondary/70",
           )}
         >
-          <span className="grid h-7 w-7 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 text-[11px] font-bold text-white">
+          <span className="grid h-7 w-7 place-items-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
             {initials(user)}
           </span>
           <span className="hidden max-w-[140px] truncate text-sm font-medium text-foreground sm:block">
@@ -60,7 +60,7 @@ export function AccountMenu({ user }: { user: SessionUser }) {
 
       <PopoverContent align="end" className="w-64 p-0">
         <div className="flex items-center gap-3 border-b border-border p-3.5">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-blue-500 text-sm font-bold text-white">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
             {initials(user)}
           </span>
           <div className="min-w-0">

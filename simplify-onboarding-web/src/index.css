@@ -3,27 +3,30 @@
 @tailwind utilities;
 
 @layer base {
+  /* ── Figma palette. Neutral base is theme-agnostic; the accent (primary/accent/ring)
+     is set by the colour dimension: default = Blue, [data-color="red"] = Red. ────────── */
   :root {
     --background: 0 0% 100%;
-    --foreground: 222 47% 11%;
+    --foreground: 203 41% 8%; /* #0c171d */
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 203 41% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 203 41% 8%;
 
-    --primary: 217 91% 55%;
+    /* Blue (default) */
+    --primary: 217 91% 61%; /* #4285f6 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary: 0 0% 95%; /* #f3f3f3 */
+    --secondary-foreground: 203 41% 8%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 42%;
+    --muted: 0 0% 95%;
+    --muted-foreground: 218 3% 53%; /* #84878c */
 
-    --accent: 214 95% 96%;
-    --accent-foreground: 217 91% 40%;
+    --accent: 215 82% 91%; /* #d4e4fa */
+    --accent-foreground: 214 76% 47%; /* #1d6dd2 */
 
     --success: 152 60% 38%;
     --success-foreground: 0 0% 100%;
@@ -31,34 +34,35 @@
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 89%;
-    --input: 214 32% 89%;
-    --ring: 217 91% 55%;
+    --border: 0 0% 87%; /* #dedede */
+    --input: 0 0% 87%;
+    --ring: 217 91% 61%;
 
     --radius: 0.85rem;
   }
 
   .dark {
-    --background: 222 47% 5%;
-    --foreground: 210 40% 98%;
+    --background: 201 33% 10%; /* #111c22 */
+    --foreground: 205 15% 92%;
 
-    --card: 222 41% 7%;
-    --card-foreground: 210 40% 98%;
+    --card: 200 18% 16%; /* #222c31 */
+    --card-foreground: 205 15% 92%;
 
-    --popover: 222 44% 6%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 201 30% 12%;
+    --popover-foreground: 205 15% 92%;
 
-    --primary: 217 91% 60%;
+    /* Blue (default) */
+    --primary: 217 91% 61%; /* #4285f6 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 217 33% 14%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 200 18% 16%; /* #222c31 */
+    --secondary-foreground: 205 15% 92%;
 
-    --muted: 217 33% 12%;
-    --muted-foreground: 215 20% 62%;
+    --muted: 200 22% 13%;
+    --muted-foreground: 216 8% 62%; /* ~#94a3b8 */
 
-    --accent: 217 50% 16%;
-    --accent-foreground: 213 94% 80%;
+    --accent: 215 70% 18%; /* #0e2950 */
+    --accent-foreground: 213 96% 73%; /* #7ab4fc */
 
     --success: 152 58% 46%;
     --success-foreground: 152 80% 7%;
@@ -66,9 +70,24 @@
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 215 28% 16%;
-    --input: 215 28% 18%;
-    --ring: 217 91% 60%;
+    --border: 200 13% 28%; /* #3e4b51 */
+    --input: 200 13% 28%;
+    --ring: 217 91% 61%;
+  }
+
+  /* ── Red colour variant — overrides only the accent (primary/accent/ring). ─────────── */
+  [data-color="red"] {
+    --primary: 356 70% 51%; /* #d92d39 */
+    --primary-foreground: 0 0% 100%;
+    --accent: 2 100% 85%; /* #ffb3b0 */
+    --accent-foreground: 356 71% 41%; /* #b31f2a */
+    --ring: 356 70% 51%;
+  }
+  .dark[data-color="red"] {
+    --primary: 356 72% 55%;
+    --accent: 356 67% 22%; /* #5c1217 */
+    --accent-foreground: 359 85% 77%; /* #f69192 */
+    --ring: 356 72% 55%;
   }
 
   * {
@@ -138,7 +157,7 @@
     z-index: -1;
     background:
       radial-gradient(60% 50% at 50% -10%, hsl(var(--primary) / 0.16), transparent 70%),
-      radial-gradient(40% 40% at 85% 10%, hsl(263 90% 60% / 0.1), transparent 70%);
+      radial-gradient(40% 40% at 85% 10%, hsl(var(--primary) / 0.09), transparent 70%);
   }
   .app-backdrop::after {
     content: "";
@@ -153,7 +172,7 @@
   }
 
   .text-gradient {
-    background: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(263 90% 66%) 130%);
+    background: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(var(--accent-foreground)) 130%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

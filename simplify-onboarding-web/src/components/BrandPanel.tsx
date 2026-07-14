@@ -62,17 +62,17 @@ export function BrandPanel({ productKey }: { productKey?: string }) {
               transition={{ duration: 0.45, ease, delay: 0.24 + i * 0.07 }}
               className="flex items-center gap-3 text-sm text-foreground/85"
             >
-              <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-success/15 text-success">
-                <Check className="h-3 w-3" strokeWidth={3} />
-              </span>
+              <Check className="h-[18px] w-[18px] shrink-0 text-primary" strokeWidth={2.5} />
               {feature}
             </motion.li>
           ))}
         </ul>
       </div>
 
-      <p className="relative text-xs text-muted-foreground/70">
-        © {new Date().getFullYear()} Simplify · Single sign-on across all products
+      <p className="relative flex items-center gap-3 text-xs text-muted-foreground/70">
+        <span>© {new Date().getFullYear()} Simplify Inc.</span>
+        <a href="#" className="transition-colors hover:text-foreground">Terms of Service</a>
+        <a href="#" className="transition-colors hover:text-foreground">Security</a>
       </p>
     </div>
   );

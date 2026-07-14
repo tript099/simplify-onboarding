@@ -1,11 +1,12 @@
 import { User, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 export type MotionChoice = "self_serve" | "team";
 
-const OPTIONS: { value: MotionChoice; label: string; icon: typeof User }[] = [
-  { value: "self_serve", label: "Just for me, right now", icon: User },
-  { value: "team", label: "Use for my whole team", icon: Users },
+const OPTIONS: { value: MotionChoice; labelKey: string; icon: typeof User }[] = [
+  { value: "self_serve", labelKey: "motion.self", icon: User },
+  { value: "team", labelKey: "motion.team", icon: Users },
 ];
 
 /**
@@ -21,10 +22,11 @@ export function MotionSplit({
   onChange: (v: MotionChoice) => void;
   enterpriseOnly?: boolean;
 }) {
+  const { t } = useI18n();
   if (enterpriseOnly) return null;
   return (
     <div role="radiogroup" aria-label="How will you use this?" className="space-y-2.5">
-      {OPTIONS.map(({ value: v, label, icon: Icon }) => {
+      {OPTIONS.map(({ value: v, labelKey, icon: Icon }) => {
         const active = value === v;
         return (
           <button
@@ -49,7 +51,7 @@ export function MotionSplit({
               <Icon className="h-[18px] w-[18px]" />
             </span>
             <span className={cn("text-sm font-semibold", active ? "text-foreground" : "text-foreground/80")}>
-              {label}
+              {t(labelKey)}
             </span>
             <span
               className={cn(

@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import { Home } from "lucide-react";
 import { BrandPanel } from "@/components/BrandPanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ColorToggle } from "@/components/ColorToggle";
+import { LanguageSelect } from "@/components/LanguageSelect";
 import { Logo } from "@/components/Logo";
 
 export function AuthLayout({
@@ -16,7 +18,7 @@ export function AuthLayout({
     <div className="relative min-h-screen lg:grid lg:grid-cols-[1.05fr_1fr] xl:grid-cols-[1.15fr_1fr]">
       <BrandPanel productKey={productKey} />
 
-      <div className="relative flex min-h-screen flex-col">
+      <div className="relative flex min-h-screen flex-col lg:border-l lg:border-border lg:bg-secondary/50">
         <div className="flex items-center justify-between p-5 lg:justify-end">
           <Link to="/" aria-label="Home" className="lg:hidden">
             <Logo size="sm" />
@@ -29,6 +31,8 @@ export function AuthLayout({
             >
               <Home className="h-[18px] w-[18px]" />
             </Link>
+            <LanguageSelect />
+            <ColorToggle />
             <ThemeToggle />
           </div>
         </div>
