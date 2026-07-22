@@ -157,6 +157,10 @@ func New(cfg *config.Config, log *zap.Logger) (*Server, error) {
 	r.Get("/health", h.Health)
 	r.Get("/ready", h.Ready)
 
+	// API docs — Swagger UI at /docs, raw OpenAPI 3 spec at /openapi.yaml.
+	r.Get("/docs", h.Docs)
+	r.Get("/openapi.yaml", h.OpenAPISpec)
+
 	// Session validation for products / Kong (docflow-auth `/validate` contract).
 	r.Get("/validate", h.Validate)
 

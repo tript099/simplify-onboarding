@@ -1,0 +1,827 @@
+openapi: 3.0.3
+info:
+  title: Simplify Onboarding Service API
+  version: "1.0.0"
+  description: |
+    HTTP API for the **Simplify Onboarding** platform — the standalone central-SSO,
+    registration, verification, product-catalog and sales-lead service.
+
+    ## Auth model
+    - The browser holds only an opaque **`session_id` cookie** (HttpOnly). All identity
+      material stays server-side (see `SESSION_ARCHITECTURE.md`).
+    - Endpoints marked **cookie** require that session cookie. Products/gateways call
+      `GET /validate` to resolve it to a universal identity (the Zitadel `sub`).
+    - `POST /sms/zitadel` is authenticated by the `ZITADEL-Signature` header (HMAC).
+    - `POST /onb/demo/{id}/schedule` is an internal endpoint guarded by `X-Internal-Secret`.
+
+    Fields ending in `debugCode` are returned **only** in dev/testing (`DEBUG_RETURN_CODE`),
+    never in production.
+  contact:
+    name: Simplify
+servers:
+  - url: /
+    description: Same-origin (this service)
+  - url: http://localhost:8090
+    description: Local Docker
+  - url: https://onboarding.simplifyai.id
+    description: Deployed
+tags:
+  - name: Health
+  - name: Session
+  - name: Auth
+  - name: OTP / Verification
+  - name: SSO
+  - name: Catalog & Onboarding
+  - name: Sales leads
+  - name: Webhooks
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  service: { type: string, example: simplify-onboarding-service }
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ready: { type: boolean, example: true }
+
+  /validate:
+    get:
+      tags: [Session]
+      summary: Validate the session cookie (products / Kong contract)
+      description: Resolves the `session_id` cookie to the universal identity. Also mounted at `/auth/validate`.
+      security: [{ cookieAuth: [] }]
+      responses:
+        "200":
+          description: Valid session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidateResponse" }
+        "401":
+          description: No/invalid session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid: { type: boolean, example: false }
+
+  /auth/validate:
+    get:
+      tags: [Session]
+      summary: Validate the session cookie (alias of /validate)
+      security: [{ cookieAuth: [] }]
+      responses:
+        "200":
+          description: Valid session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidateResponse" }
+        "401":
+          description: No/invalid session
+          content:
+            application/json:
+              schema: { type: object, properties: { valid: { type: boolean, example: false } } }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Create an account and start a session
+      description: Creates the account in the identity provider (which emails a verification code) and signs the user in immediately. Sets the `session_id` cookie. Email stays unverified until the code is confirmed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "200":
+          description: Registered + signed in (Set-Cookie session_id)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RegisterResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/ProviderUnavailable" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SignInRequest" }
+      responses:
+        "200":
+          description: Signed in (Set-Cookie session_id)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NextResponse" }
+        "401":
+          description: Wrong email or password
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/ProviderUnavailable" }
+
+  /auth/demo:
+    post:
+      tags: [Auth]
+      summary: "\"Try it now\" — sign in as the shared demo account (no signup)"
+      description: Establishes a real SSO session for the shared demo account so the demo carries across every product. The onboarding portal itself treats a demo session as signed-out.
+      responses:
+        "200":
+          description: Demo session started (Set-Cookie session_id)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  next: { type: string, example: "/" }
+                  demo: { type: boolean, example: true }
+        "404":
+          description: Demo disabled
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current signed-in user
+      security: [{ cookieAuth: [] }]
+      responses:
+        "200":
+          description: The current user (verification flags reconciled against the IdP)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/subscriptions:
+    get:
+      tags: [Auth]
+      summary: The signed-in user's per-product subscription
+      description: Best subscription per product (ACTIVE > TRIALING > PAST_DUE > CANCELED), keyed by catalog product key. Returns an empty map when logged out or the Account API isn't configured (fail-soft).
+      security: [{ cookieAuth: [] }]
+      responses:
+        "200":
+          description: Subscriptions keyed by product key
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subscriptions:
+                    type: object
+                    additionalProperties: { $ref: "#/components/schemas/ProductSub" }
+
+  /auth/logout:
+    get:
+      tags: [Auth]
+      summary: Destroy the session
+      responses:
+        "200":
+          description: Logged out (session_id cleared)
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean, example: true } } }
+
+  /auth/password/forgot:
+    post:
+      tags: [Auth]
+      summary: Email a password-reset link
+      description: Always returns 200 (never reveals whether the email exists) to prevent enumeration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: Accepted (a link is sent if the account exists)
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean, example: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/password/reset:
+    post:
+      tags: [Auth]
+      summary: Complete a password reset
+      description: Uses the one-time code from the emailed link. No session required — the code proves ownership.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userID, code, newPassword]
+              properties:
+                userID: { type: string }
+                code: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "200":
+          description: Password updated
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean, example: true } } }
+        "400":
+          description: Invalid/expired link or weak password
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/ProviderUnavailable" }
+
+  /auth/clients:
+    get:
+      tags: [Catalog & Onboarding]
+      summary: Public product registry
+      description: Drives the homepage cards + brand panel. Built-ins overlaid with Simplify Core's catalog.
+      responses:
+        "200":
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+
+  /auth/sso/{provider}:
+    get:
+      tags: [SSO]
+      summary: Begin federated SSO (Google / Microsoft)
+      description: Redirects the browser to the external IdP via Zitadel's IDP Intent API.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [google, microsoft, azure-ad] }
+        - name: redirect
+          in: query
+          required: false
+          schema: { type: string }
+          description: Product URL to land on after login (validated).
+        - name: display
+          in: query
+          required: false
+          schema: { type: string, enum: [popup] }
+      responses:
+        "302":
+          description: Redirect to the IdP (or back to /auth with an error)
+
+  /auth/sso/callback/{provider}:
+    get:
+      tags: [SSO]
+      summary: Complete the IDP intent
+      description: Retrieves the federated identity, provisions/links the account, establishes the SSO session, and redirects back to the product (or closes the popup).
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string }
+        - name: id
+          in: query
+          schema: { type: string }
+          description: idpIntentId (Zitadel)
+        - name: token
+          in: query
+          schema: { type: string }
+          description: idpIntentToken (Zitadel)
+      responses:
+        "302":
+          description: Redirect back to product / close popup (Set-Cookie session_id on success)
+
+  /auth/otp/email/start:
+    post:
+      tags: [OTP / Verification]
+      summary: Resend the email verification code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [verificationId]
+              properties:
+                verificationId: { type: string }
+      responses:
+        "200":
+          description: Code re-sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResendResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "502": { $ref: "#/components/responses/OtpSendFailed" }
+
+  /auth/otp/email/verify:
+    post:
+      tags: [OTP / Verification]
+      summary: Confirm the email code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyRequest" }
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerifyResponse" }
+        "400":
+          description: Wrong or expired code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /auth/otp/mobile/start:
+    post:
+      tags: [OTP / Verification]
+      summary: Send an SMS code to the signed-in user
+      security: [{ cookieAuth: [] }]
+      responses:
+        "200":
+          description: SMS code sent
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResendResponse" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "502": { $ref: "#/components/responses/OtpSendFailed" }
+
+  /auth/otp/mobile/verify:
+    post:
+      tags: [OTP / Verification]
+      summary: Confirm the SMS code (own phone)
+      description: The user is taken from the session, so the client sends only the code.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerifyResponse" }
+        "400":
+          description: Wrong or expired code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+
+  /auth/login/otp/start:
+    post:
+      tags: [OTP / Verification]
+      summary: Passwordless sign-in — request a code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier]
+              properties:
+                identifier: { type: string, description: email or phone }
+      responses:
+        "200":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verificationId: { type: string }
+                  channel: { type: string, example: email }
+                  resendIn: { type: integer, example: 30 }
+                  debugCode: { type: string, description: dev/testing only }
+        "404":
+          description: No account for that identifier
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/OtpSendFailed" }
+
+  /auth/login/otp/verify:
+    post:
+      tags: [OTP / Verification]
+      summary: Passwordless sign-in — exchange the code for a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/VerifyRequest" }
+      responses:
+        "200":
+          description: Signed in (Set-Cookie session_id)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VerifyResponse" }
+        "400":
+          description: Wrong or expired code
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /onb/session:
+    post:
+      tags: [Catalog & Onboarding]
+      summary: Mint (or return) the anonymous visitor id
+      responses:
+        "200":
+          description: Visitor identity (Set-Cookie visitor_id)
+          content:
+            application/json:
+              schema: { type: object, properties: { visitorId: { type: string } } }
+
+  /onb/event:
+    post:
+      tags: [Catalog & Onboarding]
+      summary: Record a funnel event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event]
+              properties:
+                event: { type: string, example: viewed_product }
+                intent: { type: string, example: legal }
+      responses:
+        "200":
+          description: Recorded
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean, example: true } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /onb/state:
+    get:
+      tags: [Catalog & Onboarding]
+      summary: Visitor's current funnel position (resume)
+      responses:
+        "200":
+          description: Funnel state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stage: { type: string, example: anonymous }
+
+  /onb/products/{key}/motion:
+    get:
+      tags: [Catalog & Onboarding]
+      summary: Motion + CTA descriptor for one product
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Product motion descriptor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductMotion" }
+        "404":
+          description: Unknown product
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /onb/entitlements:
+    get:
+      tags: [Catalog & Onboarding]
+      summary: Plan/entitlement snapshot for the current subject
+      description: Uses the session's universal identity if present, else "anonymous".
+      responses:
+        "200":
+          description: Entitlements
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "502":
+          description: Entitlements source failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /onb/demo:
+    post:
+      tags: [Sales leads]
+      summary: Submit a sales-led request (demo / POC / contact)
+      description: Persists to the onboarding DB (or Redis fallback) and fires confirmation + team-notify emails asynchronously. Body is flexible; the common fields are documented below.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DemoRequest" }
+      responses:
+        "200":
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  requestId: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /onb/demo/{id}/schedule:
+    post:
+      tags: [Sales leads]
+      summary: Book a meeting for a demo/POC request (internal)
+      description: Schedules via the external scheduler, stores the join URL + time, and emails the invite. Guarded by `X-Internal-Secret` when configured.
+      security: [{ internalSecret: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [start_time]
+              properties:
+                start_time: { type: string, example: "2026-06-28T15:00:00Z", description: "RFC3339 or 2006-01-02T15:04:05" }
+                duration: { type: integer, description: minutes (optional) }
+      responses:
+        "200":
+          description: Scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  meeting_url: { type: string }
+                  scheduled_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Missing/invalid internal secret
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Request not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: Scheduler failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "503": { $ref: "#/components/responses/ProviderUnavailable" }
+
+  /sms/zitadel:
+    post:
+      tags: [Webhooks]
+      summary: Zitadel HTTP SMS provider webhook
+      description: Zitadel POSTs OTP messages here; the service verifies the `ZITADEL-Signature` (HMAC) then forwards phone + text to the configured SMS gateway.
+      security: [{ zitadelSignature: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                contextInfo:
+                  type: object
+                  properties:
+                    recipientPhoneNumber: { type: string }
+                    eventType: { type: string }
+                templateData:
+                  type: object
+                  properties:
+                    text: { type: string }
+                args:
+                  type: object
+                  properties:
+                    code: { type: string }
+      responses:
+        "200":
+          description: Forwarded to the SMS gateway
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: Signature verification failed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+    internalSecret:
+      type: apiKey
+      in: header
+      name: X-Internal-Secret
+    zitadelSignature:
+      type: apiKey
+      in: header
+      name: ZITADEL-Signature
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthenticated:
+      description: Not signed in
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ProviderUnavailable:
+      description: Identity/other provider not configured
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    OtpSendFailed:
+      description: Could not send the code
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        code: { type: string, example: bad_request }
+        message: { type: string, example: "a valid work email is required" }
+    ValidateResponse:
+      type: object
+      properties:
+        valid: { type: boolean, example: true }
+        sub: { type: string, description: universal identity (the Zitadel subject) }
+        email: { type: string, format: email }
+        email_verified: { type: boolean }
+        first_name: { type: string }
+        last_name: { type: string }
+        display_name: { type: string }
+        phone: { type: string }
+    RegisterRequest:
+      type: object
+      required: [firstName, lastName, email, password, consent]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        displayName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string, example: "+62812..." }
+        company: { type: string }
+        jobTitle: { type: string }
+        password: { type: string, minLength: 8 }
+        consent: { type: boolean, description: must be true (privacy policy) }
+    RegisterResponse:
+      type: object
+      properties:
+        verificationId: { type: string }
+        email: { type: string, format: email }
+        debugCode: { type: string, description: dev/testing only }
+    SignInRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    NextResponse:
+      type: object
+      properties:
+        next: { type: string, example: "/" }
+    Me:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        displayName: { type: string }
+        phone: { type: string }
+        role: { type: string }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+    ResendResponse:
+      type: object
+      properties:
+        resendIn: { type: integer, example: 30 }
+        debugCode: { type: string, description: dev/testing only }
+    VerifyRequest:
+      type: object
+      required: [verificationId, code]
+      properties:
+        verificationId: { type: string }
+        code: { type: string }
+    VerifyResponse:
+      type: object
+      properties:
+        verified: { type: boolean, example: true }
+        next: { type: string, example: "/" }
+    ProductSub:
+      type: object
+      properties:
+        planCode: { type: string }
+        planName: { type: string }
+        state: { type: string, enum: [ACTIVE, TRIALING, PAST_DUE, CANCELED] }
+        billingPeriod: { type: string }
+        priceCents: { type: integer, format: int64 }
+        currency: { type: string }
+        currentPeriodEnd: { type: string }
+        cancelAtPeriodEnd: { type: boolean }
+    Product:
+      type: object
+      description: Public catalog product (shape from the registry + Core overlay).
+      properties:
+        key: { type: string }
+        name: { type: string }
+        intent: { type: string }
+        tagline: { type: string }
+        trialScope: { type: string }
+        launchUrl: { type: string }
+        logoUrl: { type: string }
+        coreId: { type: string }
+        slug: { type: string }
+        enterpriseOnly: { type: boolean }
+      additionalProperties: true
+    ProductMotion:
+      type: object
+      properties:
+        key: { type: string }
+        name: { type: string }
+        intent: { type: string }
+        allowedUserTypes: { type: array, items: { type: string } }
+        asksUserType: { type: boolean }
+        enterpriseOnly: { type: boolean }
+        trialScope: { type: string }
+        dataResidency: { type: array, items: { type: string } }
+        primaryCta: { type: string }
+    DemoRequest:
+      type: object
+      description: Sales-lead capture. Only `type` is defaulted server-side; other fields are optional.
+      properties:
+        type: { type: string, enum: [demo, poc, contact], default: demo }
+        product: { type: string, description: product key }
+        usage: { type: string, enum: [self_serve, team] }
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        jobTitle: { type: string }
+        company: { type: string }
+        companySize: { type: string }
+        industry: { type: string }
+        country: { type: string }
+        useCase: { type: string }
+        timeline: { type: string }
+        budget: { type: string }
+        notes: { type: string }
+        message: { type: string }
+        preferredDate: { type: string, example: "2026-06-28" }
+        timeSlot: { type: string, example: "Morning (9–12)" }
+        timezone: { type: string, example: "Asia/Jakarta" }
+        consent: { type: boolean }
