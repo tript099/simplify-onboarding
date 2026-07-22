@@ -53,10 +53,14 @@ server {
     proxy_ssl_server_name on;
 
     # API → backend.
-    location /auth/      { proxy_pass ${ONBOARDING_API_URL}; }
-    location /onb/       { proxy_pass ${ONBOARDING_API_URL}; }
-    location = /validate { proxy_pass ${ONBOARDING_API_URL}; }
-    location /sms/       { proxy_pass ${ONBOARDING_API_URL}; } # Zitadel HTTP SMS webhook
+    location /auth/         { proxy_pass ${ONBOARDING_API_URL}; }
+    location /onb/          { proxy_pass ${ONBOARDING_API_URL}; }
+    location = /validate    { proxy_pass ${ONBOARDING_API_URL}; }
+    location /sms/          { proxy_pass ${ONBOARDING_API_URL}; } # Zitadel HTTP SMS webhook
+
+    # API docs (Swagger UI + OpenAPI spec) → backend.
+    location = /docs         { proxy_pass ${ONBOARDING_API_URL}; }
+    location = /openapi.yaml { proxy_pass ${ONBOARDING_API_URL}; }
 
     # Bare /auth is the SPA sign-in page; everything else is client-side routing.
     location = /auth { try_files /index.html =404; }
